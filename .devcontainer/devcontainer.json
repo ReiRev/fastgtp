@@ -12,7 +12,8 @@
   ],
   "containerEnv": {
     "NVIDIA_VISIBLE_DEVICES": "all",
-    "NVIDIA_DRIVER_CAPABILITIES": "compute,utility"
+    "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
+    "FASTGTP_AUTOSTART": "0"
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",

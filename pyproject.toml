@@ -11,11 +11,13 @@ requires-python = ">=3.10"
 
 [tool.poetry.dependencies]
 fastapi = "^0.118.0"
+uvicorn = {version = "^0.31.0", extras = ["standard"]}
 
 [dependency-groups]
 dev = [
     "pytest (>=8.4.2,<9.0.0)",
-    "httpx (>=0.28.1,<0.29.0)"
+    "httpx (>=0.28.1,<0.29.0)",
+    "fastapi[standard] (>=0.118.0,<0.119.0)"
 ]
 
 [build-system]
