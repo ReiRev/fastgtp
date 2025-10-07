@@ -1,36 +1,12 @@
 {
   "name": "fastgtp-dev",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": "..",
-    "args": {
-      "KATAGO_VERSION": "1.16.3"
-    }
-  },
-  "runArgs": [
-    "--gpus=all"
-  ],
-  "containerEnv": {
-    "NVIDIA_VISIBLE_DEVICES": "all",
-    "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
-    "FASTGTP_AUTOSTART": "0"
-  },
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "fastgtp",
   "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "initializeCommand": "bash -lc 'if [ ! -f .env ] && [ -f .env.sample ]; then cp .env.sample .env; fi'",
   "remoteUser": "vscode",
-  "mounts": [
-    "source=katago-networks,target=/opt/katago/networks,type=volume"
-  ],
-  "forwardPorts": [
-    8000
-  ],
-  "portsAttributes": {
-    "8000": {
-      "label": "FastAPI dev server",
-      "onAutoForward": "notify"
-    }
-  },
-  "postCreateCommand": "poetry install --no-root || true",
+  "postCreateCommand": "bash -lc 'cd /workspace && if [ -f pyproject.toml ]; then poetry install --no-root; fi'",
+  "postStartCommand": "bash -lc 'cd /workspace && if [ -f pyproject.toml ] && [ ! -d .venv ]; then poetry install --no-root; fi'",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -43,8 +19,12 @@
         "python.pythonPath": ".venv/bin/python",
         "python.formatting.provider": "black",
         "python.linting.enabled": true,
-        "python.linting.mypyEnabled": true
+        "python.linting.mypyEnabled": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
       }
     }
-  }
+  },
+  "overrideCommand": true,
+  "runServices": ["fastgtp"],
+  "shutdownAction": "stopCompose"
 }

@@ -1,0 +1,29 @@
+services:
+  fastgtp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "${FASTGTP_PORT:-8000}:${FASTGTP_PORT:-8000}"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+      FASTGTP_HOST: ${FASTGTP_HOST:-0.0.0.0}
+    volumes:
+      - .:/workspace:cached
+      - katago_networks:/opt/katago/networks
+      - katago_logs:/var/log/katago
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  katago_networks:
+  katago_logs:

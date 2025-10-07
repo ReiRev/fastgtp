@@ -82,11 +82,10 @@ RUN sudo -u ${USERNAME} bash -lc 'cd /opt/fastgtp-app && poetry install --only m
 ENV PATH=/opt/fastgtp-app/.venv/bin:$PATH
 
 # Prepare runtime defaults for the FastAPI server
-ENV FASTGTP_DEFAULT_ENGINE="katago gtp -config ${KATAGO_ROOT}/configs/fastgtp.cfg -model ${KATAGO_ROOT}/networks/${KATAGO_NETWORK_BASENAME}" \
+ENV FASTGTP_ENGINE="katago gtp -config ${KATAGO_ROOT}/configs/fastgtp.cfg -model ${KATAGO_ROOT}/networks/${KATAGO_NETWORK_BASENAME}" \
   FASTGTP_MODEL_NAME=katago \
   FASTGTP_PORT=8000 \
-  FASTGTP_HOST=0.0.0.0 \
-  FASTGTP_AUTOSTART=1
+  FASTGTP_HOST=0.0.0.0
 
 # Provision directory structure expected by KataGo
 RUN mkdir -p /var/log/katago \
@@ -95,53 +94,10 @@ RUN mkdir -p /var/log/katago \
   && chown ${USERNAME}:${USER_GID} /workspace \
   && chown -R ${USERNAME}:${USER_GID} ${KATAGO_ROOT}
 
-# Runtime entrypoint that can launch the FastAPI server or keep the container idle
-RUN cat <<'EOF' >/usr/local/bin/fastgtp-entrypoint.sh
-#!/usr/bin/env bash
-set -euo pipefail
-
-DEFAULT_ENGINE="${FASTGTP_DEFAULT_ENGINE}"
-AUTOSTART="${FASTGTP_AUTOSTART:-1}"
-
-if [[ $# -gt 0 ]]; then
-  exec "$@"
-fi
-
-if [[ "${AUTOSTART}" != "1" ]]; then
-  exec sleep infinity
-fi
-
-if [[ -z "${FASTGTP_ENGINE:-}" ]]; then
-  NETWORK_PATH="${KATAGO_ROOT}/networks/${KATAGO_NETWORK_BASENAME}"
-  FALLBACK_NETWORK="${KATAGO_ROOT}/default-networks/${KATAGO_NETWORK_BASENAME}"
-  if [[ ! -f "${NETWORK_PATH}" && -f "${FALLBACK_NETWORK}" ]]; then
-    mkdir -p "$(dirname "${NETWORK_PATH}")"
-    cp "${FALLBACK_NETWORK}" "${NETWORK_PATH}"
-  fi
-  export FASTGTP_ENGINE="${DEFAULT_ENGINE}"
-fi
-
-export FASTGTP_MODEL_NAME="${FASTGTP_MODEL_NAME:-katago}"
-export FASTGTP_PORT="${FASTGTP_PORT:-8000}"
-export FASTGTP_HOST="${FASTGTP_HOST:-0.0.0.0}"
-
-exec uvicorn fastgtp.main:app --host "${FASTGTP_HOST}" --port "${FASTGTP_PORT}" --app-dir /opt/fastgtp-app
-EOF
-RUN chmod +x /usr/local/bin/fastgtp-entrypoint.sh
-
-# Helper command to start the server on demand within dev environments
-RUN cat <<'EOF' >/usr/local/bin/fastgtp-server
-#!/usr/bin/env bash
-set -euo pipefail
-
-export FASTGTP_AUTOSTART=1
-exec /usr/local/bin/fastgtp-entrypoint.sh "$@"
-EOF
-RUN chmod +x /usr/local/bin/fastgtp-server
-
+# Runtime command launches the API server via uvicorn
 EXPOSE 8000
 
-ENTRYPOINT ["/usr/local/bin/fastgtp-entrypoint.sh"]
+CMD ["bash", "-lc", "set -euo pipefail; if [[ -z \"${FASTGTP_ENGINE:-}\" ]]; then echo 'FASTGTP_ENGINE environment variable must be set' >&2; exit 1; fi; NETWORK_BASENAME=\"${KATAGO_NETWORK_BASENAME:-kata1-b28c512nbt-s11233360640-d5406293331.bin.gz}\"; NETWORK_PATH=\"${KATAGO_ROOT}/networks/${NETWORK_BASENAME}\"; FALLBACK_NETWORK=\"${KATAGO_ROOT}/default-networks/${NETWORK_BASENAME}\"; if [[ ! -f \"${NETWORK_PATH}\" && -f \"${FALLBACK_NETWORK}\" ]]; then NETWORK_DIR=$(dirname \"${NETWORK_PATH}\"); mkdir -p \"${NETWORK_DIR}\"; cp \"${FALLBACK_NETWORK}\" \"${NETWORK_PATH}\"; fi; uvicorn fastgtp.main:app --host \"${FASTGTP_HOST:-0.0.0.0}\" --port \"${FASTGTP_PORT:-8000}\" --app-dir /opt/fastgtp-app"]
 
 WORKDIR /workspace
 
