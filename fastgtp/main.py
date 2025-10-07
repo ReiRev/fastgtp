@@ -46,9 +46,9 @@ def _resolve_engine_command() -> Sequence[str] | str:
 
     return _read_engine_command(raw_command)
 
-_model_name = os.environ.get("FASTGTP_MODEL_NAME", "model")
+model_name = os.environ.get("FASTGTP_MODEL_NAME", "model")
 
 app = create_app(
-    model_name=_model_name,
+    model_name=model_name,
     executable=_resolve_engine_command(),
 )
