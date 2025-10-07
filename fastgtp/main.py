@@ -19,7 +19,7 @@ import json
 import os
 from typing import Sequence
 
-from . import create_app
+from . import SubprocessGTPTransport, create_app
 
 
 def _read_engine_command(env_value: str) -> Sequence[str] | str:
@@ -50,5 +50,5 @@ model_name = os.environ.get("FASTGTP_MODEL_NAME", "model")
 
 app = create_app(
     model_name=model_name,
-    executable=_resolve_engine_command(),
+    transport=SubprocessGTPTransport(_resolve_engine_command()),
 )

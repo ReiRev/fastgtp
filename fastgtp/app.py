@@ -105,16 +105,10 @@ class FastGtp(APIRouter):
         *,
         model_name: str,
         transport: GTPTransport | None = None,
-        executable: Sequence[str] | str | None = None,
         **router_kwargs: Any,
     ) -> None:
-        if transport is None and executable is None:
-            raise ValueError("Either a transport or an executable must be provided")
-
-        if transport is None and executable is not None:
-            transport = SubprocessGTPTransport(executable)
-
-        assert transport is not None  # runtime guarantee for type checkers
+        if transport is None:
+            raise ValueError("A transport must be provided")
 
         if "prefix" not in router_kwargs:
             router_kwargs["prefix"] = f"/{model_name}"
@@ -170,7 +164,6 @@ def create_app(
     *,
     model_name: str,
     transport: GTPTransport | None = None,
-    executable: Sequence[str] | str | None = None,
     router_kwargs: dict[str, Any] | None = None,
 ) -> FastAPI:
     """Create a FastAPI application wired to the provided GTP model."""
@@ -178,10 +171,11 @@ def create_app(
     app = FastAPI(title="fastgtp", version="0.1.0")
 
     kwargs = dict(router_kwargs or {})
+    if transport is None:
+        raise ValueError("A transport must be provided")
     fastgtp_router = FastGtp(
         model_name=model_name,
         transport=transport,
-        executable=executable,
         **kwargs,
     )
 
