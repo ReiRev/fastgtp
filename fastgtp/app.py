@@ -1,4 +1,5 @@
 """FastAPI components for translating REST calls to GTP commands."""
+
 from __future__ import annotations
 
 import asyncio
@@ -85,8 +86,8 @@ class SubprocessGTPTransport(GTPTransport):
                         remaining = await process.stderr.read()
                         stderr_output = remaining.decode("utf-8", errors="replace")
                     raise RuntimeError(
-                        "GTP engine terminated unexpectedly" +
-                        (f": {stderr_output.strip()}" if stderr_output else "")
+                        "GTP engine terminated unexpectedly"
+                        + (f": {stderr_output.strip()}" if stderr_output else "")
                     )
 
                 decoded = line_bytes.decode("utf-8", errors="replace")
@@ -103,20 +104,18 @@ class FastGtp(APIRouter):
     def __init__(
         self,
         *,
-        model_name: str,
         transport: GTPTransport | None = None,
         **router_kwargs: Any,
     ) -> None:
         if transport is None:
             raise ValueError("A transport must be provided")
 
-        if "prefix" not in router_kwargs:
-            router_kwargs["prefix"] = f"/{model_name}"
-
         super().__init__(**router_kwargs)
         self._transport = transport
 
-        self.add_api_route("/name", self.get_name, methods=["GET"], response_model=MetadataResponse)
+        self.add_api_route(
+            "/name", self.get_name, methods=["GET"], response_model=MetadataResponse
+        )
         self.add_api_route(
             "/version",
             self.get_version,
@@ -155,14 +154,14 @@ class FastGtp(APIRouter):
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         if not structured.success:
-            raise HTTPException(status_code=502, detail=structured.error or "Unknown GTP error")
+            raise HTTPException(
+                status_code=502, detail=structured.error or "Unknown GTP error"
+            )
 
         return MetadataResponse(data=structured.payload)
 
 
 def create_app(
-    *,
-    model_name: str,
     transport: GTPTransport | None = None,
     router_kwargs: dict[str, Any] | None = None,
 ) -> FastAPI:
@@ -174,7 +173,6 @@ def create_app(
     if transport is None:
         raise ValueError("A transport must be provided")
     fastgtp_router = FastGtp(
-        model_name=model_name,
         transport=transport,
         **kwargs,
     )
