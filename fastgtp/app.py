@@ -113,33 +113,20 @@ class FastGtp(APIRouter):
         super().__init__(**router_kwargs)
         self._transport = transport
 
-        self.add_api_route(
-            "/name", self.get_name, methods=["GET"], response_model=MetadataResponse
-        )
-        self.add_api_route(
-            "/version",
-            self.get_version,
-            methods=["GET"],
-            response_model=MetadataResponse,
-        )
-        self.add_api_route(
-            "/protocol_version",
-            self.get_protocol_version,
-            methods=["GET"],
-            response_model=MetadataResponse,
-        )
+        @self.get("/name", response_model=MetadataResponse)
+        async def get_name() -> MetadataResponse:
+            """Return the engine name according to the GTP."""
+            return await self._query("name")
 
-    async def get_name(self) -> MetadataResponse:
-        """Return the engine name according to the GTP."""
-        return await self._query("name")
+        @self.get("/version", response_model=MetadataResponse)
+        async def get_version() -> MetadataResponse:
+            """Return the engine version according to the GTP."""
+            return await self._query("version")
 
-    async def get_version(self) -> MetadataResponse:
-        """Return the engine version according to the GTP."""
-        return await self._query("version")
-
-    async def get_protocol_version(self) -> MetadataResponse:
-        """Return the protocol version supported by the engine."""
-        return await self._query("protocol_version")
+        @self.get("/protocol_version", response_model=MetadataResponse)
+        async def get_protocol_version() -> MetadataResponse:
+            """Return the protocol version supported by the engine."""
+            return await self._query("protocol_version")
 
     async def _query(self, command: str) -> MetadataResponse:
         assert self._transport is not None  # For type checkers
