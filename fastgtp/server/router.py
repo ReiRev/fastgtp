@@ -30,12 +30,6 @@ async def get_session_transport(
         raise HTTPException(status_code=404, detail="Unknown session") from exc
 
 
-class MetadataResponse(BaseModel):
-    """REST response containing the parsed GTP payload."""
-
-    data: str
-
-
 class SessionResponse(BaseModel):
     """Response payload for session creation."""
 
@@ -48,13 +42,31 @@ class QuitResponse(BaseModel):
     closed: bool
 
 
+class NameResponse(BaseModel):
+    """Engine name reported by the GTP backend."""
+
+    name: str
+
+
+class VersionResponse(BaseModel):
+    """Engine version reported by the GTP backend."""
+
+    version: str
+
+
+class ProtocolVersionResponse(BaseModel):
+    """Protocol version supported by the GTP backend."""
+
+    protocol_version: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
     def __init__(self, **router_kwargs: Any) -> None:
         super().__init__(**router_kwargs)
 
-        @self.post("/open", response_model=SessionResponse)
+        @self.post("/open")
         async def open_session(  # type: ignore[unused-coroutine]
             transport_manager: GTPTransportManager = Depends(get_transport_manager),
         ) -> SessionResponse:
@@ -62,28 +74,31 @@ class FastGtp(APIRouter):
             session_id = await transport_manager.open_session()
             return SessionResponse(session_id=session_id)
 
-        @self.get("/{session_id}/name", response_model=MetadataResponse)
+        @self.get("/{session_id}/name")
         async def get_name(  # type: ignore[unused-coroutine]
             transport: GTPTransport = Depends(get_session_transport),
-        ) -> MetadataResponse:
+        ) -> NameResponse:
             """Return the engine name according to the GTP."""
-            return await self._query("name", transport)
+            payload = await self._query("name", transport)
+            return NameResponse(name=payload)
 
-        @self.get("/{session_id}/version", response_model=MetadataResponse)
+        @self.get("/{session_id}/version")
         async def get_version(  # type: ignore[unused-coroutine]
             transport: GTPTransport = Depends(get_session_transport),
-        ) -> MetadataResponse:
+        ) -> VersionResponse:
             """Return the engine version according to the GTP."""
-            return await self._query("version", transport)
+            payload = await self._query("version", transport)
+            return VersionResponse(version=payload)
 
-        @self.get("/{session_id}/protocol_version", response_model=MetadataResponse)
+        @self.get("/{session_id}/protocol_version")
         async def get_protocol_version(  # type: ignore[unused-coroutine]
             transport: GTPTransport = Depends(get_session_transport),
-        ) -> MetadataResponse:
+        ) -> ProtocolVersionResponse:
             """Return the protocol version supported by the engine."""
-            return await self._query("protocol_version", transport)
+            payload = await self._query("protocol_version", transport)
+            return ProtocolVersionResponse(protocol_version=payload)
 
-        @self.post("/{session_id}/quit", response_model=QuitResponse)
+        @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
             session_id: str,
             transport_manager: GTPTransportManager = Depends(get_transport_manager),
@@ -98,7 +113,7 @@ class FastGtp(APIRouter):
         self,
         command: str,
         transport: GTPTransport,
-    ) -> MetadataResponse:
+    ) -> str:
         try:
             raw = await transport.send_command(command)
         except Exception as exc:  # pragma: no cover - transport specific
@@ -114,7 +129,7 @@ class FastGtp(APIRouter):
                 status_code=502, detail=structured.error or "Unknown GTP error"
             )
 
-        return MetadataResponse(data=structured.payload)
+        return structured.payload
 
 
 def create_app(

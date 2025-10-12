@@ -9,9 +9,11 @@ from .server.gtp import (
 )
 from .server.router import (
     FastGtp,
-    MetadataResponse,
+    NameResponse,
+    ProtocolVersionResponse,
     QuitResponse,
     SessionResponse,
+    VersionResponse,
     create_app,
     get_transport_manager,
 )
@@ -19,9 +21,11 @@ from .server.transport import GTPTransport, GTPTransportManager, SubprocessGTPTr
 
 __all__ = [
     "FastGtp",
-    "MetadataResponse",
+    "NameResponse",
+    "ProtocolVersionResponse",
     "QuitResponse",
     "SessionResponse",
+    "VersionResponse",
     "create_app",
     "get_transport_manager",
     "GTPTransport",
