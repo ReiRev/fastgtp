@@ -10,3 +10,10 @@ def test_open_session(client):
 def test_get_name(client, session_id):
     res = client.get(f"/{session_id}/name")
     assert res.status_code == 200
+    assert "name" in res.json()
+
+
+def test_get_version(client, session_id):
+    res = client.get(f"/{session_id}/version")
+    assert res.status_code == 200
+    assert "version" in res.json()
