@@ -67,7 +67,7 @@ class FastGtp(APIRouter):
     def __init__(self, **router_kwargs: Any) -> None:
         super().__init__(**router_kwargs)
 
-        @self.post("/open")
+        @self.post("/open_session", status_code=201)
         async def open_session(  # type: ignore[unused-coroutine]
             transport_manager: GTPTransportManager = Depends(get_transport_manager),
         ) -> SessionResponse:
