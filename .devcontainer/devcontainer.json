@@ -20,11 +20,18 @@
         "python.formatting.provider": "black",
         "python.linting.enabled": true,
         "python.linting.mypyEnabled": true,
-        "terminal.integrated.defaultProfile.linux": "bash"
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/.pytest_cache": true,
+          "**/.mypy_cache": true
+        }
       }
     }
   },
   "overrideCommand": true,
-  "runServices": ["fastgtp"],
+  "runServices": [
+    "fastgtp"
+  ],
   "shutdownAction": "stopCompose"
 }
