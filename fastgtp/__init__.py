@@ -1,6 +1,7 @@
 """fastgtp - Translate Go Text Protocol engines into REST APIs."""
-from .app import FastGtp, GTPTransport, MetadataResponse, SubprocessGTPTransport, create_app
-from .gtp import ParsedCommand, ParsedResponse, build_command, parse_command_line, parse_response
+from .server.router import FastGtp, MetadataResponse, create_app
+from .server.transport import GTPTransport, SubprocessGTPTransport
+from .server.gtp import ParsedCommand, ParsedResponse, build_command, parse_command_line, parse_response
 
 __all__ = [
     "FastGtp",

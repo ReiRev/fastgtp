@@ -97,7 +97,7 @@ RUN mkdir -p /var/log/katago \
 # Runtime command launches the API server via uvicorn
 EXPOSE 8000
 
-CMD ["bash", "-lc", "set -euo pipefail; if [[ -z \"${FASTGTP_ENGINE:-}\" ]]; then echo 'FASTGTP_ENGINE environment variable must be set' >&2; exit 1; fi; NETWORK_BASENAME=\"${KATAGO_NETWORK_BASENAME:-kata1-b28c512nbt-s11233360640-d5406293331.bin.gz}\"; NETWORK_PATH=\"${KATAGO_ROOT}/networks/${NETWORK_BASENAME}\"; FALLBACK_NETWORK=\"${KATAGO_ROOT}/default-networks/${NETWORK_BASENAME}\"; if [[ ! -f \"${NETWORK_PATH}\" && -f \"${FALLBACK_NETWORK}\" ]]; then NETWORK_DIR=$(dirname \"${NETWORK_PATH}\"); mkdir -p \"${NETWORK_DIR}\"; cp \"${FALLBACK_NETWORK}\" \"${NETWORK_PATH}\"; fi; uvicorn fastgtp.main:app --host \"${FASTGTP_HOST:-0.0.0.0}\" --port \"${FASTGTP_PORT:-8000}\" --app-dir /opt/fastgtp-app"]
+CMD ["bash", "-lc", "set -euo pipefail; if [[ -z \"${FASTGTP_ENGINE:-}\" ]]; then echo 'FASTGTP_ENGINE environment variable must be set' >&2; exit 1; fi; NETWORK_BASENAME=\"${KATAGO_NETWORK_BASENAME:-kata1-b28c512nbt-s11233360640-d5406293331.bin.gz}\"; NETWORK_PATH=\"${KATAGO_ROOT}/networks/${NETWORK_BASENAME}\"; FALLBACK_NETWORK=\"${KATAGO_ROOT}/default-networks/${NETWORK_BASENAME}\"; if [[ ! -f \"${NETWORK_PATH}\" && -f \"${FALLBACK_NETWORK}\" ]]; then NETWORK_DIR=$(dirname \"${NETWORK_PATH}\"); mkdir -p \"${NETWORK_DIR}\"; cp \"${FALLBACK_NETWORK}\" \"${NETWORK_PATH}\"; fi; uvicorn fastgtp.server.main:app --host \"${FASTGTP_HOST:-0.0.0.0}\" --port \"${FASTGTP_PORT:-8000}\" --app-dir /opt/fastgtp-app"]
 
 WORKDIR /workspace
 
