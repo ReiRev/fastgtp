@@ -118,16 +118,29 @@ class FastGtp(APIRouter):
 
 
 def create_app(
-    app_kwargs: dict[str, Any] = {},
-    router_kwargs: dict[str, Any] = {},
+    transport_manager: GTPTransportManager,
+    *,
+    app_kwargs: dict[str, Any] | None = None,
+    router_kwargs: dict[str, Any] | None = None,
 ) -> FastAPI:
-    """Create a FastAPI application that exposes the GTP router.
+    """Create a FastAPI application that exposes the GTP router."""
 
-    The caller is responsible for configuring the `get_transport_manager`
-    dependency via `app.dependency_overrides`.
-    """
+    if app_kwargs is None:
+        app_kwargs = {}
+    if router_kwargs is None:
+        router_kwargs = {}
 
     app = FastAPI(title="fastgtp", **app_kwargs)
     fastgtp_router = FastGtp(**router_kwargs)
     app.include_router(fastgtp_router)
+
+    async def override_get_manager() -> GTPTransportManager:
+        return transport_manager
+
+    app.dependency_overrides[get_transport_manager] = override_get_manager
+
+    @app.on_event("shutdown")
+    async def _close_sessions() -> None:
+        await transport_manager.close_all()
+
     return app

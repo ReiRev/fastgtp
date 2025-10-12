@@ -15,12 +15,7 @@ from __future__ import annotations
 
 import os
 
-from . import (
-    GTPTransportManager,
-    SubprocessGTPTransport,
-    create_app,
-    get_transport_manager,
-)
+from . import GTPTransportManager, SubprocessGTPTransport, create_app
 
 
 def build_transport(command: str) -> SubprocessGTPTransport:
@@ -42,14 +37,4 @@ def transport_factory() -> SubprocessGTPTransport:
 manager = GTPTransportManager(transport_factory)
 
 
-async def override_get_manager() -> GTPTransportManager:
-    return manager
-
-
-app = create_app()
-app.dependency_overrides[get_transport_manager] = override_get_manager
-
-
-@app.on_event("shutdown")
-async def _close_sessions() -> None:
-    await manager.close_all()
+app = create_app(manager)
