@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .gtp import parse_response
-from .transport import GTPTransport
+from .transport import GTPTransport, GTPTransportManager, TransportFactory
 
 
 class MetadataResponse(BaseModel):
@@ -17,40 +18,113 @@ class MetadataResponse(BaseModel):
     data: str
 
 
+class SessionResponse(BaseModel):
+    """Response payload for session creation."""
+
+    session_id: str
+
+
+class QuitResponse(BaseModel):
+    """Response payload for session termination."""
+
+    closed: bool
+
+
 class FastGtp(APIRouter):
-    """Router encapsulating REST endpoints backed by a GTP transport."""
+    """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
     def __init__(
         self,
         *,
-        transport: GTPTransport | None = None,
+        transport_factory: TransportFactory | None = None,
+        manager: GTPTransportManager | None = None,
+        manager_dependency: (
+            Callable[[], GTPTransportManager | Awaitable[GTPTransportManager]] | None
+        ) = None,
         **router_kwargs: Any,
     ) -> None:
-        if transport is None:
-            raise ValueError("A transport must be provided")
+        if manager_dependency is None:
+            if manager is None:
+                if transport_factory is None:
+                    raise ValueError(
+                        "A transport factory or manager dependency must be provided"
+                    )
+                manager = GTPTransportManager(transport_factory)
+            manager_dependency = lambda: manager
 
         super().__init__(**router_kwargs)
-        self._transport = transport
+        self._manager_dependency = manager_dependency
 
-        @self.get("/name")
-        async def get_name() -> MetadataResponse:
+        async def session_transport_dependency(
+            session_id: str,
+            session_manager: GTPTransportManager = Depends(self._manager_dependency),
+        ) -> GTPTransport:
+            try:
+                return await session_manager.get_transport(session_id)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail="Unknown session") from exc
+
+        self._transport_dependency = session_transport_dependency
+
+        @self.post("/open", response_model=SessionResponse)
+        async def open_session(
+            session_manager: GTPTransportManager = Depends(self._manager_dependency),
+        ) -> SessionResponse:
+            """Create a new session backed by a dedicated transport."""
+            session_id = await session_manager.open_session()
+            return SessionResponse(session_id=session_id)
+
+        @self.get(
+            "/{session_id}/name",
+            response_model=MetadataResponse,
+        )
+        async def get_name(
+            transport: GTPTransport = Depends(self._transport_dependency),
+        ) -> MetadataResponse:
             """Return the engine name according to the GTP."""
-            return await self._query("name")
+            return await self._query("name", transport)
 
-        @self.get("/version")
-        async def get_version() -> MetadataResponse:
+        @self.get(
+            "/{session_id}/version",
+            response_model=MetadataResponse,
+        )
+        async def get_version(
+            transport: GTPTransport = Depends(self._transport_dependency),
+        ) -> MetadataResponse:
             """Return the engine version according to the GTP."""
-            return await self._query("version")
+            return await self._query("version", transport)
 
-        @self.get("/protocol_version")
-        async def get_protocol_version() -> MetadataResponse:
+        @self.get(
+            "/{session_id}/protocol_version",
+            response_model=MetadataResponse,
+        )
+        async def get_protocol_version(
+            transport: GTPTransport = Depends(self._transport_dependency),
+        ) -> MetadataResponse:
             """Return the protocol version supported by the engine."""
-            return await self._query("protocol_version")
+            return await self._query("protocol_version", transport)
 
-    async def _query(self, command: str) -> MetadataResponse:
-        assert self._transport is not None  # For type checkers
+        @self.post(
+            "/{session_id}/quit",
+            response_model=QuitResponse,
+        )
+        async def quit_session(
+            session_id: str,
+            session_manager: GTPTransportManager = Depends(self._manager_dependency),
+        ) -> QuitResponse:
+            """Terminate the session and release its transport."""
+            closed = await session_manager.close_session(session_id)
+            if not closed:
+                raise HTTPException(status_code=404, detail="Unknown session")
+            return QuitResponse(closed=True)
+
+    async def _query(
+        self,
+        command: str,
+        transport: GTPTransport,
+    ) -> MetadataResponse:
         try:
-            raw = await self._transport.send_command(command)
+            raw = await transport.send_command(command)
         except Exception as exc:  # pragma: no cover - transport specific
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -68,17 +142,28 @@ class FastGtp(APIRouter):
 
 
 def create_app(
-    transport: GTPTransport,
-    app_kwargs: dict[str, Any] = {},
-    router_kwargs: dict[str, Any] = {},
+    transport_factory: TransportFactory,
+    app_kwargs: dict[str, Any] | None = None,
+    router_kwargs: dict[str, Any] | None = None,
 ) -> FastAPI:
-    """Create a FastAPI application wired to the provided GTP model."""
+    """Create a FastAPI application wired to session-based GTP transports."""
 
-    app = FastAPI(title="fastgtp", **router_kwargs)
+    if app_kwargs is None:
+        app_kwargs = {}
+    if router_kwargs is None:
+        router_kwargs = {}
+
+    app = FastAPI(title="fastgtp", **app_kwargs)
+    manager = GTPTransportManager(transport_factory)
     fastgtp_router = FastGtp(
-        transport=transport,
+        manager=manager,
         **router_kwargs,
     )
 
     app.include_router(fastgtp_router)
+
+    @app.on_event("shutdown")
+    async def _close_sessions() -> None:
+        await manager.close_all()
+
     return app

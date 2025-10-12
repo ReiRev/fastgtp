@@ -23,4 +23,4 @@ if command is None:
         "FASTGTP_ENGINE environment variable is required to launch the server."
     )
 
-app = create_app(SubprocessGTPTransport(command))
+app = create_app(lambda: SubprocessGTPTransport(command))

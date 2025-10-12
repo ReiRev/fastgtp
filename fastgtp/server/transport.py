@@ -1,19 +1,28 @@
-"""Transport abstractions for communicating with GTP engines."""
+"""Transport abstractions and session management for GTP engines."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import shlex
+import uuid
 from asyncio.subprocess import PIPE, Process
+from collections.abc import Awaitable, Callable
 from typing import Protocol, Sequence
 
 
 class GTPTransport(Protocol):
     """Abstraction over something that can execute GTP commands."""
 
+    async def open(self) -> None:
+        """Prepare the transport for use."""
+
     async def send_command(self, command: str) -> str:
         """Send a single command and return the raw response."""
+
+    async def aclose(self) -> None:
+        """Close the transport and release resources."""
 
 
 class SubprocessGTPTransport(GTPTransport):
@@ -31,17 +40,23 @@ class SubprocessGTPTransport(GTPTransport):
         self._process: Process | None = None
         self._lock = asyncio.Lock()
 
+    async def open(self) -> None:
+        """Spawn the subprocess if needed."""
+        async with self._lock:
+            await self._ensure_process()
+
     async def aclose(self) -> None:
         """Terminate the managed subprocess if it is running."""
-        if self._process is None:
-            return
-        if self._process.stdin is not None:
-            self._process.stdin.close()
-        if self._process.returncode is None:
-            self._process.terminate()
-            with contextlib.suppress(ProcessLookupError):
-                await self._process.wait()
-        self._process = None
+        async with self._lock:
+            if self._process is None:
+                return
+            if self._process.stdin is not None:
+                self._process.stdin.close()
+            if self._process.returncode is None:
+                self._process.terminate()
+                with contextlib.suppress(ProcessLookupError):
+                    await self._process.wait()
+            self._process = None
 
     async def _ensure_process(self) -> Process:
         if self._process is None or self._process.returncode is not None:
@@ -87,4 +102,68 @@ class SubprocessGTPTransport(GTPTransport):
             return "".join(lines)
 
 
-__all__ = ["GTPTransport", "SubprocessGTPTransport"]
+TransportFactory = Callable[[], GTPTransport | Awaitable[GTPTransport]]
+
+
+class GTPTransportManager:
+    """Manage transport instances keyed by session identifiers."""
+
+    def __init__(self, factory: TransportFactory):
+        self._factory = factory
+        self._sessions: dict[str, GTPTransport] = {}
+        self._lock = asyncio.Lock()
+
+    async def open_session(self) -> str:
+        """Create and store a new transport, returning its session id."""
+        transport = self._factory()
+        if inspect.isawaitable(transport):
+            transport = await transport
+        await transport.open()
+
+        session_id = uuid.uuid4().hex
+        async with self._lock:
+            while session_id in self._sessions:
+                session_id = uuid.uuid4().hex
+            self._sessions[session_id] = transport
+        return session_id
+
+    async def get_transport(self, session_id: str) -> GTPTransport:
+        """Retrieve a transport for the given session id."""
+        async with self._lock:
+            transport = self._sessions.get(session_id)
+        if transport is None:
+            raise KeyError(session_id)
+        return transport
+
+    async def close_session(self, session_id: str) -> bool:
+        """Close and remove the transport for the given session."""
+        transport: GTPTransport | None
+        async with self._lock:
+            transport = self._sessions.pop(session_id, None)
+        if transport is None:
+            return False
+        await transport.aclose()
+        return True
+
+    async def close_all(self) -> None:
+        """Close and clear all managed transports."""
+        async with self._lock:
+            transports = list(self._sessions.values())
+            self._sessions.clear()
+        results = await asyncio.gather(
+            *(transport.aclose() for transport in transports),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                # Best-effort cleanup; surface in logs without interrupting shutdown.
+                # Users can add logging here if desired.
+                continue
+
+
+__all__ = [
+    "GTPTransport",
+    "GTPTransportManager",
+    "SubprocessGTPTransport",
+    "TransportFactory",
+]
