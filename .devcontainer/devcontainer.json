@@ -16,7 +16,8 @@
         "streetsidesoftware.code-spell-checker",
         "njpwerner.autodocstring",
         "ms-python.black-formatter",
-        "ms-python.isort"
+        "ms-python.isort",
+        "mhutchie.git-graph"
       ],
       "settings": {
         "python.pythonPath": ".venv/bin/python",
