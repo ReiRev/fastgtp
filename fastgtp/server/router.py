@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
@@ -145,7 +146,14 @@ def create_app(
     if router_kwargs is None:
         router_kwargs = {}
 
-    app = FastAPI(title="fastgtp", **app_kwargs)
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            await transport_manager.close_all()
+
+    app = FastAPI(title="fastgtp", lifespan=lifespan, **app_kwargs)
     fastgtp_router = FastGtp(**router_kwargs)
     app.include_router(fastgtp_router)
 
@@ -153,9 +161,5 @@ def create_app(
         return transport_manager
 
     app.dependency_overrides[get_transport_manager] = override_get_manager
-
-    @app.on_event("shutdown")
-    async def _close_sessions() -> None:
-        await transport_manager.close_all()
 
     return app
