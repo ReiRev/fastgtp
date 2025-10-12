@@ -3,6 +3,7 @@
 This module provides helpers to parse GTP commands and responses so they can
 be translated to structured REST representations and vice versa.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,7 +11,6 @@ import re
 from typing import Iterable, Sequence, TypedDict
 
 _COMMAND_NAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$")
-
 
 
 class GTPResponsePayload(TypedDict):
@@ -144,8 +144,8 @@ def parse_response(raw: str, *, expected_id: str | None = None) -> ParsedRespons
     if not raw:
         raise ValueError("Empty GTP response")
 
-    normalised = raw.replace("\r\n", "\n").replace("\r", "\n")
-    lines = normalised.split("\n")
+    normalized = raw.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
 
     # Drop trailing blank lines that are commonly used as separators in GTP.
     while lines and lines[-1] == "":
@@ -169,9 +169,7 @@ def parse_response(raw: str, *, expected_id: str | None = None) -> ParsedRespons
 
     if status_line is None:
         if chatter:
-            raise ValueError(
-                "GTP response missing status line; got: " + chatter[0]
-            )
+            raise ValueError("GTP response missing status line; got: " + chatter[0])
         raise ValueError("GTP response missing status line")
 
     status_char = status_line[0]
@@ -205,7 +203,7 @@ def parse_response(raw: str, *, expected_id: str | None = None) -> ParsedRespons
             identifier=identifier,
             payload=payload_text,
             error=None,
-            raw=normalised,
+            raw=normalized,
         )
 
     error_message = payload_text or "Unknown error"
@@ -214,5 +212,5 @@ def parse_response(raw: str, *, expected_id: str | None = None) -> ParsedRespons
         identifier=identifier,
         payload="",
         error=error_message,
-        raw=normalised,
+        raw=normalized,
     )
