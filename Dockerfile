@@ -83,7 +83,6 @@ ENV PATH=/opt/fastgtp-app/.venv/bin:$PATH
 
 # Prepare runtime defaults for the FastAPI server
 ENV FASTGTP_ENGINE="katago gtp -config ${KATAGO_ROOT}/configs/fastgtp.cfg -model ${KATAGO_ROOT}/networks/${KATAGO_NETWORK_BASENAME}" \
-  FASTGTP_MODEL_NAME=katago \
   FASTGTP_PORT=8000 \
   FASTGTP_HOST=0.0.0.0
 

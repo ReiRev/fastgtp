@@ -2,10 +2,10 @@
 
 Usage example:
 
-    FASTGTP_ENGINE="katago --gtp" FASTGTP_MODEL_NAME="katago" fastapi dev fastgtp/server/main.py
+    FASTGTP_ENGINE="katago --gtp" fastapi dev fastgtp/server/main.py
 
 Set the `FASTGTP_ENGINE` environment variable to the engine command (string or
-JSON array) and optionally `FASTGTP_MODEL_NAME` for the prefix.
+JSON array).
 
 The module exposes a module-level `app` object so tooling such as
 `fastapi dev fastgtp/server/main.py` or `uvicorn fastgtp.server.main:app` can pick it up.
