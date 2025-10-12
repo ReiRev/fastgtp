@@ -18,23 +18,12 @@ import os
 from . import GTPTransportManager, SubprocessGTPTransport, create_app
 
 
-def build_transport(command: str) -> SubprocessGTPTransport:
-    """Construct a transport for the configured engine command."""
-    return SubprocessGTPTransport(command)
-
-
 command = os.environ.get("FASTGTP_ENGINE")
 if command is None:
     raise RuntimeError(
         "FASTGTP_ENGINE environment variable is required to launch the server."
     )
 
-
-def transport_factory() -> SubprocessGTPTransport:
-    return build_transport(command)
-
-
-manager = GTPTransportManager(transport_factory)
-
+manager = GTPTransportManager(SubprocessGTPTransport(command))
 
 app = create_app(manager)

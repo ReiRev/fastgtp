@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import shlex
 import uuid
 from asyncio.subprocess import PIPE, Process
-from collections.abc import Awaitable, Callable
 from typing import Protocol, Sequence
 
 
@@ -23,6 +21,9 @@ class GTPTransport(Protocol):
 
     async def aclose(self) -> None:
         """Close the transport and release resources."""
+
+    def copy(self) -> GTPTransport:
+        """Return a new transport instance with the same configuration."""
 
 
 class SubprocessGTPTransport(GTPTransport):
@@ -101,23 +102,24 @@ class SubprocessGTPTransport(GTPTransport):
 
             return "".join(lines)
 
-
-TransportFactory = Callable[[], GTPTransport | Awaitable[GTPTransport]]
+    def copy(self) -> SubprocessGTPTransport:
+        """Create a fresh transport with the same command."""
+        return SubprocessGTPTransport(self._command)
 
 
 class GTPTransportManager:
     """Manage transport instances keyed by session identifiers."""
 
-    def __init__(self, factory: TransportFactory):
-        self._factory = factory
+    def __init__(self, transport: GTPTransport):
+        self._transport = transport
         self._sessions: dict[str, GTPTransport] = {}
         self._lock = asyncio.Lock()
 
     async def open_session(self) -> str:
         """Create and store a new transport, returning its session id."""
-        transport = self._factory()
-        if inspect.isawaitable(transport):
-            transport = await transport
+        transport = self._transport.copy()
+        if asyncio.iscoroutine(transport):  # pragma: no cover - defensive
+            transport = await transport  # type: ignore[assignment]
         await transport.open()
 
         session_id = uuid.uuid4().hex
@@ -165,5 +167,4 @@ __all__ = [
     "GTPTransport",
     "GTPTransportManager",
     "SubprocessGTPTransport",
-    "TransportFactory",
 ]

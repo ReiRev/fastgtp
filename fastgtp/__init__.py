@@ -15,12 +15,7 @@ from .server.router import (
     create_app,
     get_transport_manager,
 )
-from .server.transport import (
-    GTPTransport,
-    GTPTransportManager,
-    SubprocessGTPTransport,
-    TransportFactory,
-)
+from .server.transport import GTPTransport, GTPTransportManager, SubprocessGTPTransport
 
 __all__ = [
     "FastGtp",
@@ -32,7 +27,6 @@ __all__ = [
     "GTPTransport",
     "GTPTransportManager",
     "SubprocessGTPTransport",
-    "TransportFactory",
     "ParsedCommand",
     "ParsedResponse",
     "build_command",
