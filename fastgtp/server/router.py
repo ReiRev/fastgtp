@@ -32,17 +32,17 @@ class FastGtp(APIRouter):
         super().__init__(**router_kwargs)
         self._transport = transport
 
-        @self.get("/name", response_model=MetadataResponse)
+        @self.get("/name")
         async def get_name() -> MetadataResponse:
             """Return the engine name according to the GTP."""
             return await self._query("name")
 
-        @self.get("/version", response_model=MetadataResponse)
+        @self.get("/version")
         async def get_version() -> MetadataResponse:
             """Return the engine version according to the GTP."""
             return await self._query("version")
 
-        @self.get("/protocol_version", response_model=MetadataResponse)
+        @self.get("/protocol_version")
         async def get_protocol_version() -> MetadataResponse:
             """Return the protocol version supported by the engine."""
             return await self._query("protocol_version")
@@ -68,27 +68,17 @@ class FastGtp(APIRouter):
 
 
 def create_app(
-    transport: GTPTransport | None = None,
-    router_kwargs: dict[str, Any] | None = None,
+    transport: GTPTransport,
+    app_kwargs: dict[str, Any] = {},
+    router_kwargs: dict[str, Any] = {},
 ) -> FastAPI:
     """Create a FastAPI application wired to the provided GTP model."""
 
-    app = FastAPI(title="fastgtp", version="0.1.0")
-
-    kwargs = dict(router_kwargs or {})
-    if transport is None:
-        raise ValueError("A transport must be provided")
+    app = FastAPI(title="fastgtp", **router_kwargs)
     fastgtp_router = FastGtp(
         transport=transport,
-        **kwargs,
+        **router_kwargs,
     )
-
-    @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
 
     app.include_router(fastgtp_router)
     return app
-
-
-__all__ = ["MetadataResponse", "FastGtp", "create_app"]
