@@ -13,6 +13,7 @@ from .router import (
     QuitResponse,
     SessionResponse,
     create_app,
+    get_transport_manager,
 )
 from .transport import (
     GTPTransport,
@@ -27,6 +28,7 @@ __all__ = [
     "QuitResponse",
     "SessionResponse",
     "create_app",
+    "get_transport_manager",
     "GTPTransport",
     "GTPTransportManager",
     "SubprocessGTPTransport",
