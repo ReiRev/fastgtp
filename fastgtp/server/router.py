@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Sequence
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
-from .gtp import parse_response
+from .gtp import build_command, parse_response
 from .transport import GTPTransport, GTPTransportManager
 
 
@@ -67,6 +67,19 @@ class CommandsResponse(BaseModel):
     commands: list[str]
 
 
+class BoardSizeRequest(BaseModel):
+    """Request payload for configuring the board size."""
+
+    x: int
+    y: int | None = None
+
+
+class BoardSizeResponse(BaseModel):
+    """Response payload for board size updates."""
+
+    message: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -114,6 +127,18 @@ class FastGtp(APIRouter):
             commands = [line for line in payload.splitlines() if line]
             return CommandsResponse(commands=commands)
 
+        @self.post("/{session_id}/boardsize")
+        async def set_boardsize(  # type: ignore[unused-coroutine]
+            request: BoardSizeRequest,
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> BoardSizeResponse:
+            """Set the board size to NxN or NxM and clear the board."""
+            args: list[str] = [str(request.x)]
+            if request.y is not None:
+                args.append(str(request.y))
+            payload = await self._query("boardsize", transport, arguments=args)
+            return BoardSizeResponse(message=payload)
+
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
             session_id: str,
@@ -129,9 +154,12 @@ class FastGtp(APIRouter):
         self,
         command: str,
         transport: GTPTransport,
+        *,
+        arguments: Sequence[str] | None = None,
     ) -> str:
         try:
-            raw = await transport.send_command(command)
+            command_text = build_command(command, arguments)
+            raw = await transport.send_command(command_text)
         except Exception as exc:  # pragma: no cover - transport specific
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 

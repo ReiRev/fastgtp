@@ -51,3 +51,26 @@ def test_list_commands(client, session_id):
 
     expected_subset = {"protocol_version", "name", "version", "list_commands", "quit"}
     assert expected_subset.issubset(set(commands))
+
+
+def test_set_boardsize_square(client, session_id):
+    res = client.post(f"/{session_id}/boardsize", json={"x": 19})
+    assert res.status_code == 200
+
+    data = res.json()
+    assert "message" in data
+    assert isinstance(data["message"], str)
+
+
+def test_set_boardsize_rectangular(client, session_id):
+    res = client.post(f"/{session_id}/boardsize", json={"x": 9, "y": 13})
+    assert res.status_code == 200
+
+    data = res.json()
+    assert "message" in data
+    assert isinstance(data["message"], str)
+
+
+def test_set_boardsize_invalid_session(client, invalid_session_id):
+    res = client.post(f"/{invalid_session_id}/boardsize", json={"x": 19})
+    assert res.status_code == 404
