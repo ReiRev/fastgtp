@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any, Sequence
+import re
+from typing import Any, Sequence, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from .gtp import build_command, parse_response
 from .transport import GTPTransport, GTPTransportManager
@@ -98,6 +99,32 @@ class KomiValueResponse(BaseModel):
     komi: float
 
 
+class PlayRequest(BaseModel):
+    """Request payload for play commands."""
+
+    color: Literal["B"] | Literal["W"]
+    vertex: str = Field(
+        ...,
+        description="Board coordinate in letter+number format (e.g. E12).",
+        examples=["D4", "K10"],
+    )
+
+    @field_validator("vertex")
+    @classmethod
+    def validate_vertex(cls, value: str) -> str:
+        if not value:
+            raise ValueError("vertex cannot be empty")
+        if not re.fullmatch(r"[A-Za-z]\d+", value):
+            raise ValueError("vertex must be letter+digits (e.g. E12)")
+        return value.upper()
+
+
+class PlayResponse(BaseModel):
+    """Response payload for play commands."""
+
+    message: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -163,7 +190,9 @@ class FastGtp(APIRouter):
             transport: GTPTransport = Depends(get_session_transport),
         ) -> KomiResponse:
             """Set the komi value on the board."""
-            payload = await self._query("komi", transport, arguments=[str(request.value)])
+            payload = await self._query(
+                "komi", transport, arguments=[str(request.value)]
+            )
             return KomiResponse(message=payload)
 
         @self.get("/{session_id}/komi")
@@ -179,6 +208,19 @@ class FastGtp(APIRouter):
                     status_code=502, detail=f"Invalid komi value: {payload!r}"
                 ) from exc
             return KomiValueResponse(komi=komi)
+
+        @self.post("/{session_id}/play")
+        async def play_move(  # type: ignore[unused-coroutine]
+            request: PlayRequest,
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> PlayResponse:
+            """Play a move on the board for the given color."""
+            payload = await self._query(
+                "play",
+                transport,
+                arguments=[request.color, request.vertex],
+            )
+            return PlayResponse(message=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
