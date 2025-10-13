@@ -1,7 +1,5 @@
 import pytest
 
-from fastapi import FastAPI
-
 ENDPOINT_KEY_PAIRS = [
     ("name", "name"),
     ("version", "version"),
@@ -9,16 +7,20 @@ ENDPOINT_KEY_PAIRS = [
 ]
 
 
-@pytest.mark.parametrize(["endpoint", "key"], ENDPOINT_KEY_PAIRS)
+@pytest.mark.parametrize(
+    ["endpoint", "key"],
+    [
+        ("name", "name"),
+        ("version", "version"),
+        ("protocol_version", "protocol_version"),
+    ],
+)
 def test_get(client, session_id, endpoint, key):
     res = client.get(f"/{session_id}/{endpoint}")
     assert res.status_code == 200
     assert key in res.json()
 
-
-@pytest.mark.parametrize(["endpoint", "key"], ENDPOINT_KEY_PAIRS)
-def test_return_404_with_invalid_session_id(client, invalid_session_id, endpoint, key):
-    res = client.get(f"/{invalid_session_id}/{endpoint}")
+    res = client.get(f"/invalid_session_id/{endpoint}")
     assert res.status_code == 404
 
 
@@ -36,3 +38,16 @@ def test_quit_session(client):
     quit_res = client.post(f"/{new_session_id}/quit")
     assert quit_res.status_code == 200
     assert quit_res.json() == {"closed": True}
+
+
+def test_list_commands(client, session_id):
+    res = client.get(f"/{session_id}/commands")
+    assert res.status_code == 200
+
+    data = res.json()
+    assert "commands" in data
+    commands = data["commands"]
+    assert isinstance(commands, list)
+
+    expected_subset = {"protocol_version", "name", "version", "list_commands", "quit"}
+    assert expected_subset.issubset(set(commands))

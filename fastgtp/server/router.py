@@ -61,6 +61,12 @@ class ProtocolVersionResponse(BaseModel):
     protocol_version: str
 
 
+class CommandsResponse(BaseModel):
+    """Command list supported by the GTP backend."""
+
+    commands: list[str]
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -98,6 +104,15 @@ class FastGtp(APIRouter):
             """Return the protocol version supported by the engine."""
             payload = await self._query("protocol_version", transport)
             return ProtocolVersionResponse(protocol_version=payload)
+
+        @self.get("/{session_id}/commands")
+        async def list_commands(  # type: ignore[unused-coroutine]
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> CommandsResponse:
+            """Return the list of commands supported by the engine."""
+            payload = await self._query("list_commands", transport)
+            commands = [line for line in payload.splitlines() if line]
+            return CommandsResponse(commands=commands)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
