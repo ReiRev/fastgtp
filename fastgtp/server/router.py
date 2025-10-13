@@ -125,6 +125,12 @@ class PlayResponse(BaseModel):
     detail: str
 
 
+class ClearBoardResponse(BaseModel):
+    """Response payload for clearing the board."""
+
+    detail: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -221,6 +227,14 @@ class FastGtp(APIRouter):
                 arguments=[request.color, request.vertex],
             )
             return PlayResponse(detail=payload)
+
+        @self.post("/{session_id}/clear_board")
+        async def clear_board(  # type: ignore[unused-coroutine]
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> ClearBoardResponse:
+            """Clear the current board state."""
+            payload = await self._query("clear_board", transport)
+            return ClearBoardResponse(detail=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
