@@ -151,6 +151,19 @@ class SgfResponse(BaseModel):
     sgf: str
 
 
+class LoadSgfRequest(BaseModel):
+    """Request payload for loading an SGF file."""
+
+    filename: str
+    move: str | None = None
+
+
+class LoadSgfResponse(BaseModel):
+    """Response payload for SGF loading."""
+
+    detail: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -272,6 +285,18 @@ class FastGtp(APIRouter):
             """Return the current position encoded as SGF."""
             payload = await self._query("printsgf", transport)
             return SgfResponse(sgf=payload)
+
+        @self.post("/{session_id}/sgf")
+        async def load_sgf(  # type: ignore[unused-coroutine]
+            request: LoadSgfRequest,
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> LoadSgfResponse:
+            """Load an SGF file optionally up to a move number or vertex."""
+            args = [request.filename]
+            if request.move:
+                args.append(request.move)
+            payload = await self._query("loadsgf", transport, arguments=args)
+            return LoadSgfResponse(detail=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
