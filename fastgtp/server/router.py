@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import re
-from typing import Any, Sequence, Literal
+from contextlib import asynccontextmanager
+from typing import Any, Literal, Sequence
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from .gtp import build_command, parse_response
 from .transport import GTPTransport, GTPTransportManager
+
+ColorType = Literal["B", "W"]
 
 
 async def get_transport_manager() -> GTPTransportManager:
@@ -102,7 +104,7 @@ class KomiValueResponse(BaseModel):
 class PlayRequest(BaseModel):
     """Request payload for play commands."""
 
-    color: Literal["B"] | Literal["W"]
+    color: ColorType
     vertex: str = Field(
         ...,
         description="Board coordinate in letter+number format (e.g. E12).",
@@ -129,6 +131,18 @@ class ClearBoardResponse(BaseModel):
     """Response payload for clearing the board."""
 
     detail: str
+
+
+class GenMoveRequest(BaseModel):
+    """Request payload for generating a move."""
+
+    color: ColorType
+
+
+class GenMoveResponse(BaseModel):
+    """Response payload for generated moves."""
+
+    move: str
 
 
 class FastGtp(APIRouter):
@@ -235,6 +249,15 @@ class FastGtp(APIRouter):
             """Clear the current board state."""
             payload = await self._query("clear_board", transport)
             return ClearBoardResponse(detail=payload)
+
+        @self.post("/{session_id}/genmove")
+        async def genmove(  # type: ignore[unused-coroutine]
+            request: GenMoveRequest,
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> GenMoveResponse:
+            """Generate and play the next move for the given color."""
+            payload = await self._query("genmove", transport, arguments=[request.color])
+            return GenMoveResponse(move=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
