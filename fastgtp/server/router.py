@@ -145,6 +145,12 @@ class GenMoveResponse(BaseModel):
     move: str
 
 
+class SgfResponse(BaseModel):
+    """Response payload for SGF exports."""
+
+    sgf: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -258,6 +264,14 @@ class FastGtp(APIRouter):
             """Generate and play the next move for the given color."""
             payload = await self._query("genmove", transport, arguments=[request.color])
             return GenMoveResponse(move=payload)
+
+        @self.get("/{session_id}/sgf")
+        async def get_sgf(  # type: ignore[unused-coroutine]
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> SgfResponse:
+            """Return the current position encoded as SGF."""
+            payload = await self._query("printsgf", transport)
+            return SgfResponse(sgf=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]

@@ -5,6 +5,7 @@ ENDPOINT_KEY_PAIRS = [
     ("version", "version"),
     ("protocol_version", "protocol_version"),
     ("komi", "komi"),
+    ("sgf", "sgf"),
 ]
 
 
@@ -15,6 +16,7 @@ ENDPOINT_KEY_PAIRS = [
         ("version", "version"),
         ("protocol_version", "protocol_version"),
         ("komi", "komi"),
+        ("sgf", "sgf"),
     ],
 )
 def test_get(client, session_id, endpoint, key):
@@ -155,3 +157,15 @@ def test_genmove_invalid_color(client, session_id):
 def test_genmove_invalid_session(client, invalid_session_id):
     res = client.post(f"/{invalid_session_id}/genmove", json={"color": "B"})
     assert res.status_code == 404
+
+
+def test_get_sgf_format(client, session_id):
+    res = client.get(f"/{session_id}/sgf")
+    assert res.status_code == 200
+
+    data = res.json()
+    assert data.keys() == {"sgf"}
+    sgf = data["sgf"]
+    assert isinstance(sgf, str)
+    assert sgf.startswith("(")
+    assert ";FF" in sgf
