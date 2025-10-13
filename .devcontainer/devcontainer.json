@@ -31,7 +31,8 @@
           "**/.mypy_cache": true
         },
         "cSpell.words": [
-          "fastgtp"
+          "fastgtp",
+          "boardsize"
         ],
         "editor.tabSize": 4
       }
