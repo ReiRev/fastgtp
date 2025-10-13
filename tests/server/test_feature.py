@@ -60,8 +60,9 @@ def test_set_boardsize_square(client, session_id):
     assert res.status_code == 200
 
     data = res.json()
-    assert "message" in data
-    assert isinstance(data["message"], str)
+    assert "detail" in data
+    assert isinstance(data["detail"], str)
+    assert data["detail"] == "" or "Initializing board" in data["detail"]
 
 
 def test_set_boardsize_rectangular(client, session_id):
@@ -69,8 +70,8 @@ def test_set_boardsize_rectangular(client, session_id):
     assert res.status_code == 200
 
     data = res.json()
-    assert "message" in data
-    assert isinstance(data["message"], str)
+    assert "detail" in data
+    assert isinstance(data["detail"], str)
 
 
 def test_set_boardsize_invalid_session(client, invalid_session_id):
@@ -83,8 +84,8 @@ def test_set_komi(client, session_id):
     assert res.status_code == 200
 
     data = res.json()
-    assert "message" in data
-    assert isinstance(data["message"], str)
+    assert "detail" in data
+    assert isinstance(data["detail"], str)
 
 
 def test_set_komi_invalid_session(client, invalid_session_id):
@@ -100,8 +101,8 @@ def test_play_move(client, session_id):
     assert res.status_code == 200
 
     data = res.json()
-    assert "message" in data
-    assert isinstance(data["message"], str)
+    assert "detail" in data
+    assert isinstance(data["detail"], str)
 
 
 def test_play_move_invalid_session(client, invalid_session_id):

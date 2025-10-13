@@ -78,7 +78,7 @@ class BoardSizeRequest(BaseModel):
 class BoardSizeResponse(BaseModel):
     """Response payload for board size updates."""
 
-    message: str
+    detail: str
 
 
 class KomiRequest(BaseModel):
@@ -90,7 +90,7 @@ class KomiRequest(BaseModel):
 class KomiResponse(BaseModel):
     """Response payload for komi updates."""
 
-    message: str
+    detail: str
 
 
 class KomiValueResponse(BaseModel):
@@ -122,7 +122,7 @@ class PlayRequest(BaseModel):
 class PlayResponse(BaseModel):
     """Response payload for play commands."""
 
-    message: str
+    detail: str
 
 
 class FastGtp(APIRouter):
@@ -182,7 +182,7 @@ class FastGtp(APIRouter):
             if request.y is not None:
                 args.append(str(request.y))
             payload = await self._query("boardsize", transport, arguments=args)
-            return BoardSizeResponse(message=payload)
+            return BoardSizeResponse(detail=payload)
 
         @self.post("/{session_id}/komi")
         async def set_komi(  # type: ignore[unused-coroutine]
@@ -193,7 +193,7 @@ class FastGtp(APIRouter):
             payload = await self._query(
                 "komi", transport, arguments=[str(request.value)]
             )
-            return KomiResponse(message=payload)
+            return KomiResponse(detail=payload)
 
         @self.get("/{session_id}/komi")
         async def get_komi(  # type: ignore[unused-coroutine]
@@ -220,7 +220,7 @@ class FastGtp(APIRouter):
                 transport,
                 arguments=[request.color, request.vertex],
             )
-            return PlayResponse(message=payload)
+            return PlayResponse(detail=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
