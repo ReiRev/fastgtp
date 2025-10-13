@@ -74,3 +74,17 @@ def test_set_boardsize_rectangular(client, session_id):
 def test_set_boardsize_invalid_session(client, invalid_session_id):
     res = client.post(f"/{invalid_session_id}/boardsize", json={"x": 19})
     assert res.status_code == 404
+
+
+def test_set_komi(client, session_id):
+    res = client.post(f"/{session_id}/komi", json={"value": 6.5})
+    assert res.status_code == 200
+
+    data = res.json()
+    assert "message" in data
+    assert isinstance(data["message"], str)
+
+
+def test_set_komi_invalid_session(client, invalid_session_id):
+    res = client.post(f"/{invalid_session_id}/komi", json={"value": 6.5})
+    assert res.status_code == 404

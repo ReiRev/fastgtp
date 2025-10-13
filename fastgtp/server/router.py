@@ -80,6 +80,18 @@ class BoardSizeResponse(BaseModel):
     message: str
 
 
+class KomiRequest(BaseModel):
+    """Request payload for configuring komi."""
+
+    value: float
+
+
+class KomiResponse(BaseModel):
+    """Response payload for komi updates."""
+
+    message: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -138,6 +150,15 @@ class FastGtp(APIRouter):
                 args.append(str(request.y))
             payload = await self._query("boardsize", transport, arguments=args)
             return BoardSizeResponse(message=payload)
+
+        @self.post("/{session_id}/komi")
+        async def set_komi(  # type: ignore[unused-coroutine]
+            request: KomiRequest,
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> KomiResponse:
+            """Set the komi value on the board."""
+            payload = await self._query("komi", transport, arguments=[str(request.value)])
+            return KomiResponse(message=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
