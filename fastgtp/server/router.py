@@ -92,6 +92,12 @@ class KomiResponse(BaseModel):
     message: str
 
 
+class KomiValueResponse(BaseModel):
+    """Current komi configured on the board."""
+
+    komi: float
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -159,6 +165,20 @@ class FastGtp(APIRouter):
             """Set the komi value on the board."""
             payload = await self._query("komi", transport, arguments=[str(request.value)])
             return KomiResponse(message=payload)
+
+        @self.get("/{session_id}/komi")
+        async def get_komi(  # type: ignore[unused-coroutine]
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> KomiValueResponse:
+            """Return the current komi reported by the engine."""
+            payload = await self._query("get_komi", transport)
+            try:
+                komi = float(payload)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=502, detail=f"Invalid komi value: {payload!r}"
+                ) from exc
+            return KomiValueResponse(komi=komi)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]

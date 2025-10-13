@@ -4,6 +4,7 @@ ENDPOINT_KEY_PAIRS = [
     ("name", "name"),
     ("version", "version"),
     ("protocol_version", "protocol_version"),
+    ("komi", "komi"),
 ]
 
 
@@ -13,6 +14,7 @@ ENDPOINT_KEY_PAIRS = [
         ("name", "name"),
         ("version", "version"),
         ("protocol_version", "protocol_version"),
+        ("komi", "komi"),
     ],
 )
 def test_get(client, session_id, endpoint, key):
