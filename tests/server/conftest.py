@@ -38,3 +38,8 @@ def session_id(client):
     yield session_id
 
     client.post(f"/{session_id}/quit")
+
+
+@pytest.fixture(scope="session")
+def invalid_session_id():
+    return "invalid_session_id"
