@@ -34,7 +34,7 @@ async def get_session_transport(
         raise HTTPException(status_code=404, detail="Unknown session") from exc
 
 
-class SessionResponse(BaseModel):
+class OpenSessionResponse(BaseModel):
     """Response payload for session creation."""
 
     session_id: str
@@ -173,10 +173,10 @@ class FastGtp(APIRouter):
         @self.post("/open_session", status_code=201)
         async def open_session(  # type: ignore[unused-coroutine]
             transport_manager: GTPTransportManager = Depends(get_transport_manager),
-        ) -> SessionResponse:
+        ) -> OpenSessionResponse:
             """Create a new session backed by a dedicated transport."""
             session_id = await transport_manager.open_session()
-            return SessionResponse(session_id=session_id)
+            return OpenSessionResponse(session_id=session_id)
 
         @self.get("/{session_id}/name")
         async def get_name(  # type: ignore[unused-coroutine]
