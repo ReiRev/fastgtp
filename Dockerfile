@@ -35,7 +35,10 @@ RUN apt-get update && \
   python3-venv \
   python3-pip \
   python-is-python3 \
+  gnugo \
   && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/usr/games:${PATH}"
 
 # Create non-root user for VS Code and devcontainers
 RUN groupadd --gid ${USER_GID} ${USERNAME} \
@@ -52,25 +55,25 @@ RUN sudo -u ${USERNAME} poetry config virtualenvs.in-project true
 
 # Install KataGo binary and sample configs
 RUN set -eux; \
-    mkdir -p ${KATAGO_ROOT} ${KATAGO_ROOT}/configs ${KATAGO_ROOT}/networks ${KATAGO_ROOT}/default-networks; \
-    KATAGO_TMP="/tmp/katago-unpack"; \
-    rm -rf "${KATAGO_TMP}"; \
-    mkdir -p "${KATAGO_TMP}"; \
-    curl -L -o /tmp/katago.zip "https://github.com/lightvector/KataGo/releases/download/v${KATAGO_VERSION}/${KATAGO_PACKAGE}"; \
-    unzip -q /tmp/katago.zip -d "${KATAGO_TMP}"; \
-    chmod +x "${KATAGO_TMP}/katago"; \
-    (cd "${KATAGO_TMP}" && ./katago --appimage-extract >/dev/null); \
-    install -d "${KATAGO_ROOT}/appimage/usr"; \
-    cp -r "${KATAGO_TMP}/squashfs-root/usr/." "${KATAGO_ROOT}/appimage/usr/"; \
-    cp "${KATAGO_TMP}"/*.cfg "${KATAGO_ROOT}/configs/"; \
-    cp "${KATAGO_ROOT}/configs/default_gtp.cfg" "${KATAGO_ROOT}/configs/fastgtp.cfg"; \
-    sed -i 's|logDir = gtp_logs|logDir = /var/log/katago|g' "${KATAGO_ROOT}/configs/fastgtp.cfg"; \
-    printf '#!/usr/bin/env bash\nset -euo pipefail\nHERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"\nexport LD_LIBRARY_PATH="${HERE}/appimage/usr/lib:${LD_LIBRARY_PATH:-}"\nexec "${HERE}/appimage/usr/bin/katago" "$@"\n' > "${KATAGO_ROOT}/katago"; \
-    chmod +x "${KATAGO_ROOT}/katago"; \
-    curl -L -o "${KATAGO_ROOT}/default-networks/${KATAGO_NETWORK_BASENAME}" "${KATAGO_NETWORK_URL}"; \
-    cp "${KATAGO_ROOT}/default-networks/${KATAGO_NETWORK_BASENAME}" "${KATAGO_ROOT}/networks/${KATAGO_NETWORK_BASENAME}"; \
-    ln -sf "${KATAGO_ROOT}/katago" /usr/local/bin/katago; \
-    rm -rf "${KATAGO_TMP}" /tmp/katago.zip
+  mkdir -p ${KATAGO_ROOT} ${KATAGO_ROOT}/configs ${KATAGO_ROOT}/networks ${KATAGO_ROOT}/default-networks; \
+  KATAGO_TMP="/tmp/katago-unpack"; \
+  rm -rf "${KATAGO_TMP}"; \
+  mkdir -p "${KATAGO_TMP}"; \
+  curl -L -o /tmp/katago.zip "https://github.com/lightvector/KataGo/releases/download/v${KATAGO_VERSION}/${KATAGO_PACKAGE}"; \
+  unzip -q /tmp/katago.zip -d "${KATAGO_TMP}"; \
+  chmod +x "${KATAGO_TMP}/katago"; \
+  (cd "${KATAGO_TMP}" && ./katago --appimage-extract >/dev/null); \
+  install -d "${KATAGO_ROOT}/appimage/usr"; \
+  cp -r "${KATAGO_TMP}/squashfs-root/usr/." "${KATAGO_ROOT}/appimage/usr/"; \
+  cp "${KATAGO_TMP}"/*.cfg "${KATAGO_ROOT}/configs/"; \
+  cp "${KATAGO_ROOT}/configs/default_gtp.cfg" "${KATAGO_ROOT}/configs/fastgtp.cfg"; \
+  sed -i 's|logDir = gtp_logs|logDir = /var/log/katago|g' "${KATAGO_ROOT}/configs/fastgtp.cfg"; \
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nHERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"\nexport LD_LIBRARY_PATH="${HERE}/appimage/usr/lib:${LD_LIBRARY_PATH:-}"\nexec "${HERE}/appimage/usr/bin/katago" "$@"\n' > "${KATAGO_ROOT}/katago"; \
+  chmod +x "${KATAGO_ROOT}/katago"; \
+  curl -L -o "${KATAGO_ROOT}/default-networks/${KATAGO_NETWORK_BASENAME}" "${KATAGO_NETWORK_URL}"; \
+  cp "${KATAGO_ROOT}/default-networks/${KATAGO_NETWORK_BASENAME}" "${KATAGO_ROOT}/networks/${KATAGO_NETWORK_BASENAME}"; \
+  ln -sf "${KATAGO_ROOT}/katago" /usr/local/bin/katago; \
+  rm -rf "${KATAGO_TMP}" /tmp/katago.zip
 
 # Copy project source for runtime usage and expose it on PYTHONPATH
 COPY --chown=${USERNAME}:${USER_GID} fastgtp /opt/fastgtp-app/fastgtp
