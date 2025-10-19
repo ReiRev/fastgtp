@@ -173,6 +173,18 @@ class LoadSgfResponse(BaseModel):
     detail: str
 
 
+class CommandRequest(BaseModel):
+    """Command Request"""
+
+    command: str
+
+
+class CommandResponse(BaseModel):
+    """Command Response"""
+
+    detail: str
+
+
 class FastGtp(APIRouter):
     """Router encapsulating REST endpoints backed by session-based GTP transports."""
 
@@ -327,6 +339,15 @@ class FastGtp(APIRouter):
                     os.remove(filename)
                 except OSError:
                     pass
+
+        @self.post("/{session_id}/command")
+        async def send_command(  # type: ignore[unused-coroutine]
+            request: CommandRequest,
+            transport: GTPTransport = Depends(get_session_transport),
+        ) -> CommandResponse:
+            """Forward arbitrary commands to the underlying GTP engine."""
+            payload = await self._query(request.command, transport)
+            return CommandResponse(detail=payload)
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
