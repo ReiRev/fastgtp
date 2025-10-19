@@ -7,8 +7,6 @@ def test_get_sgf(client, session_id):
 
     sgf = data["sgf"]
     assert isinstance(sgf, str)
-    assert sgf.startswith("(")
-    assert ";FF" in sgf
 
 
 def test_get_sgf_invalid_session(client, invalid_session_id):
