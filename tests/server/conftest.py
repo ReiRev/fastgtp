@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from fastgtp import create_app, GTPTransportManager, SubprocessGTPTransport
