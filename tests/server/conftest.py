@@ -4,11 +4,21 @@ from fastgtp import create_app, GTPTransportManager, SubprocessGTPTransport
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(params=["gnugo", "katago"], scope="session")
+def gtp_type(request):
+    return request.param
+
+
 @pytest.fixture(scope="session")
-def gtp_transport():
-    return SubprocessGTPTransport(
-        "katago gtp -config /opt/katago/configs/fastgtp.cfg -model /opt/katago/networks/kata1-b28c512nbt-s11233360640-d5406293331.bin.gz"
-    )
+def gtp_transport(gtp_type):
+    if gtp_type == "gnugo":
+        return SubprocessGTPTransport("gnugo --mode gtp")
+    elif gtp_type == "katago":
+        return SubprocessGTPTransport(
+            "katago gtp -config /opt/katago/configs/fastgtp.cfg -model /opt/katago/networks/kata1-b28c512nbt-s11233360640-d5406293331.bin.gz"
+        )
+    else:
+        raise NotImplementedError()
 
 
 @pytest.fixture(scope="session")
