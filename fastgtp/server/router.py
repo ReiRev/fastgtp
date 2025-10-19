@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from contextlib import asynccontextmanager
 from typing import Any, Literal, Sequence
 
@@ -154,8 +156,15 @@ class SgfResponse(BaseModel):
 class LoadSgfRequest(BaseModel):
     """Request payload for loading an SGF file."""
 
-    filename: str
-    move: str | None = None
+    content: str = Field(
+        ...,
+        description="SGF contents to load into the engine.",
+    )
+    move: int | None = Field(
+        default=None,
+        description="Optional move number to stop loading at.",
+        strict=True,
+    )
 
 
 class LoadSgfResponse(BaseModel):
@@ -291,12 +300,33 @@ class FastGtp(APIRouter):
             request: LoadSgfRequest,
             transport: GTPTransport = Depends(get_session_transport),
         ) -> LoadSgfResponse:
-            """Load an SGF file optionally up to a move number or vertex."""
-            args = [request.filename]
-            if request.move:
-                args.append(request.move)
-            payload = await self._query("loadsgf", transport, arguments=args)
-            return LoadSgfResponse(detail=payload)
+            """loadsgf: Load an SGF file, possibly up to a move number or the first occurrence of a move.
+
+            Arguments: filename + move number, vertex, or nothing
+            Fails:     missing filename or failure to open or parse file
+            Returns:   color to play
+            """
+            temp = tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", suffix=".sgf", delete=False
+            )
+            try:
+                temp.write(request.content)
+                temp.flush()
+            finally:
+                temp.close()
+
+            filename = temp.name
+            args = [filename]
+            if request.move is not None:
+                args.append(str(request.move))
+            try:
+                payload = await self._query("loadsgf", transport, arguments=args)
+                return LoadSgfResponse(detail=payload)
+            finally:
+                try:
+                    os.remove(filename)
+                except OSError:
+                    pass
 
         @self.post("/{session_id}/quit")
         async def quit_session(  # type: ignore[unused-coroutine]
