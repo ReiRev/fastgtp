@@ -5,8 +5,8 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 ARG KATAGO_VERSION=1.16.3
 ARG KATAGO_PACKAGE=katago-v${KATAGO_VERSION}-cuda12.1-cudnn8.9.7-linux-x64.zip
-ARG KATAGO_NETWORK_URL=https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-s11233360640-d5406293331.bin.gz
 ARG KATAGO_NETWORK_BASENAME=kata1-b28c512nbt-s11233360640-d5406293331.bin.gz
+ARG KATAGO_NETWORK_URL=https://media.katagotraining.org/uploaded/networks/models/kata1/${KATAGO_NETWORK_BASENAME}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -66,14 +66,14 @@ RUN set -eux; \
   install -d "${KATAGO_ROOT}/appimage/usr"; \
   cp -r "${KATAGO_TMP}/squashfs-root/usr/." "${KATAGO_ROOT}/appimage/usr/"; \
   cp "${KATAGO_TMP}"/*.cfg "${KATAGO_ROOT}/configs/"; \
-  cp "${KATAGO_ROOT}/configs/default_gtp.cfg" "${KATAGO_ROOT}/configs/fastgtp.cfg"; \
-  sed -i 's|logDir = gtp_logs|logDir = /var/log/katago|g' "${KATAGO_ROOT}/configs/fastgtp.cfg"; \
   printf '#!/usr/bin/env bash\nset -euo pipefail\nHERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"\nexport LD_LIBRARY_PATH="${HERE}/appimage/usr/lib:${LD_LIBRARY_PATH:-}"\nexec "${HERE}/appimage/usr/bin/katago" "$@"\n' > "${KATAGO_ROOT}/katago"; \
   chmod +x "${KATAGO_ROOT}/katago"; \
   curl -L -o "${KATAGO_ROOT}/default-networks/${KATAGO_NETWORK_BASENAME}" "${KATAGO_NETWORK_URL}"; \
   cp "${KATAGO_ROOT}/default-networks/${KATAGO_NETWORK_BASENAME}" "${KATAGO_ROOT}/networks/${KATAGO_NETWORK_BASENAME}"; \
   ln -sf "${KATAGO_ROOT}/katago" /usr/local/bin/katago; \
   rm -rf "${KATAGO_TMP}" /tmp/katago.zip
+
+COPY .devcontainer/fastgtp.cfg ${KATAGO_ROOT}/configs/fastgtp.cfg
 
 # Copy project source for runtime usage and expose it on PYTHONPATH
 COPY --chown=${USERNAME}:${USER_GID} fastgtp /opt/fastgtp-app/fastgtp
