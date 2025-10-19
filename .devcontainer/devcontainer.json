@@ -7,6 +7,9 @@
   "remoteUser": "vscode",
   "postCreateCommand": "bash -lc 'cd /workspace && if [ -f pyproject.toml ]; then poetry install --no-root; fi'",
   "postStartCommand": "bash -lc 'cd /workspace && if [ -f pyproject.toml ] && [ ! -d .venv ]; then poetry install --no-root; fi'",
+  "mounts": [
+    "source=${localEnv:HOME}/.gnupg,target=/home/vscode/.gnupg,type=bind,consistency=cached",
+  ],
   "customizations": {
     "vscode": {
       "extensions": [
