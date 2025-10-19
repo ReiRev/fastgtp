@@ -5,7 +5,7 @@ description = "A FastAPI wrapper that turns Go Text Protocol engines into REST A
 authors = [
     {name = "ReiRev",email = "reirev2913@gmail.com"}
 ]
-license = {text = "MIT"}
+license = {text = "PolyForm Noncommercial License 1.0.0"}
 readme = "README.md"
 requires-python = ">=3.10"
 
