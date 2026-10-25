@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 FAKE_ENGINE = Path(__file__).with_name("fake_engine.py")
-FINISHED = ("succeeded", "failed", "canceled")
+FINISHED = ("succeeded", "failed")
 
 
 def fake_engine_command(*flags: str) -> list[str]:

@@ -20,10 +20,10 @@ from .problems import ANALYSIS_TIMED_OUT, INTERNAL_ERROR
 
 logger = logging.getLogger(__name__)
 
-JobStatus = Literal["queued", "running", "succeeded", "failed", "canceled"]
+JobStatus = Literal["queued", "running", "succeeded", "failed"]
 JobRunner = Callable[[Callable[[int], None]], Awaitable[dict[str, Any]]]
 
-_FINISHED: frozenset[str] = frozenset({"succeeded", "failed", "canceled"})
+_FINISHED: frozenset[str] = frozenset({"succeeded", "failed"})
 
 
 class QueueFull(Exception):
@@ -156,40 +156,37 @@ class JobManager:
         return sum(1 for job in self._jobs.values() if job.status == "running")
 
     async def _run(self, job: Job, runner: JobRunner) -> None:
-        try:
-            async with self._slots:
-                job.status = "running"
-                job.started_at = _utcnow()
+        # A cancelled job is being deleted or the server is stopping, so no
+        # client can see it any more and its status is left as it was.
+        async with self._slots:
+            job.status = "running"
+            job.started_at = _utcnow()
 
-                def on_progress(done: int) -> None:
-                    job.done = done
+            def on_progress(done: int) -> None:
+                job.done = done
 
-                try:
-                    job.result = await asyncio.wait_for(
-                        runner(on_progress), self._timeout_seconds
-                    )
-                except asyncio.TimeoutError:
-                    failure = AnalysisFailure(
-                        ANALYSIS_TIMED_OUT,
-                        f"The job did not finish within {self._timeout_seconds:g} seconds",
-                    )
-                    self._finish(job, "failed", error=failure.problem())
-                    return
-                except AnalysisFailure as failure:
-                    self._finish(job, "failed", error=failure.problem())
-                    return
-                except Exception:
-                    logger.exception("Analysis job %s failed", job.id)
-                    failure = AnalysisFailure(
-                        INTERNAL_ERROR, "The analysis failed unexpectedly"
-                    )
-                    self._finish(job, "failed", error=failure.problem())
-                    return
-                self._finish(job, "succeeded")
-        except asyncio.CancelledError:
-            if not job.finished:
-                self._finish(job, "canceled")
-            raise
+            try:
+                job.result = await asyncio.wait_for(
+                    runner(on_progress), self._timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                failure = AnalysisFailure(
+                    ANALYSIS_TIMED_OUT,
+                    f"The job did not finish within {self._timeout_seconds:g} seconds",
+                )
+                self._finish(job, "failed", error=failure.problem())
+                return
+            except AnalysisFailure as failure:
+                self._finish(job, "failed", error=failure.problem())
+                return
+            except Exception:
+                logger.exception("Analysis job %s failed", job.id)
+                failure = AnalysisFailure(
+                    INTERNAL_ERROR, "The analysis failed unexpectedly"
+                )
+                self._finish(job, "failed", error=failure.problem())
+                return
+            self._finish(job, "succeeded")
 
     def _finish(
         self, job: Job, status: JobStatus, *, error: dict[str, Any] | None = None

@@ -34,6 +34,7 @@ from .analysis import (
 from .jobs import IdempotencyConflict, Job, JobManager, JobStatus, QueueFull
 from .problems import (
     ANALYSIS_NOT_SUPPORTED,
+    ENGINE_ERROR,
     IDEMPOTENCY_KEY_REUSED,
     INVALID_REQUEST,
     QUEUE_FULL,
@@ -136,7 +137,15 @@ class AnalysisService:
         async def run(on_progress) -> dict[str, Any]:
             transport = SubprocessGTPTransport(profile.engine_command(), respawn=False)
             try:
-                await transport.open()
+                try:
+                    await transport.open()
+                except OSError as exc:
+                    logger.warning(
+                        "Profile %r: engine did not start: %s", profile.name, exc
+                    )
+                    raise AnalysisFailure(
+                        ENGINE_ERROR, "The engine could not be started"
+                    ) from exc
                 turns = await analyze_winrates(transport, request, on_progress)
             finally:
                 await transport.aclose()
@@ -147,6 +156,27 @@ class AnalysisService:
             }
 
         return run
+
+
+class Problem(BaseModel):
+    """An RFC 9457 problem details object."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str
+    title: str
+    status: int
+    detail: str
+
+
+def _problems(*statuses: int) -> dict[int | str, dict[str, Any]]:
+    return {
+        status: {
+            "description": HTTPStatus(status).phrase,
+            "content": {PROBLEM_MEDIA_TYPE: {"schema": Problem.model_json_schema()}},
+        }
+        for status in statuses
+    }
 
 
 class _CamelModel(BaseModel):
@@ -214,7 +244,7 @@ def install_problem_handler(app: FastAPI) -> None:
     """
 
     async def validation_handler(request: Request, exc: RequestValidationError):
-        if not _is_v1(request.url.path):
+        if not _is_v1(request):
             return await request_validation_exception_handler(request, exc)
         # FastAPI's errors also echo the invalid input, which can be most of a
         # large body, so only the location and the message are returned.
@@ -229,7 +259,7 @@ def install_problem_handler(app: FastAPI) -> None:
         )
 
     async def http_handler(request: Request, exc: StarletteHTTPException):
-        if not _is_v1(request.url.path):
+        if not _is_v1(request):
             return await http_exception_handler(request, exc)
         try:
             title = HTTPStatus(exc.status_code).phrase
@@ -275,6 +305,7 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         status_code=202,
         response_model=JobResponse,
         response_model_exclude_none=True,
+        responses=_problems(422, 501, 503),
     )
     async def submit_analysis(  # type: ignore[unused-coroutine]
         request: AnalysisRequest,
@@ -336,6 +367,7 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         "/analyses/{job_id}",
         response_model=JobResponse,
         response_model_exclude_none=True,
+        responses=_problems(404, 422),
     )
     async def get_analysis(job_id: str, response: Response):  # type: ignore[unused-coroutine]
         """Return the state of a job, with its result once it has finished."""
@@ -344,7 +376,7 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
             return unknown_job(job_id)
         return job_response(job, response)
 
-    @router.delete("/analyses/{job_id}", status_code=204)
+    @router.delete("/analyses/{job_id}", status_code=204, responses=_problems(404, 422))
     async def delete_analysis(job_id: str):  # type: ignore[unused-coroutine]
         """Delete a job. A job that has not finished is stopped first."""
         if not await service.jobs.delete(job_id):
@@ -392,5 +424,11 @@ def _allowed_methods(request: Request) -> str:
     return ", ".join(sorted(methods))
 
 
-def _is_v1(path: str) -> bool:
+def _is_v1(request: Request) -> bool:
+    # Servers such as uvicorn put the root path in front of the request path,
+    # so it is removed before the path is compared.
+    path = request.scope["path"]
+    root_path = request.scope.get("root_path", "")
+    if root_path and path.startswith(root_path):
+        path = path[len(root_path) :]
     return path == PREFIX or path.startswith(PREFIX + "/")

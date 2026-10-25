@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import runpy
 
+import httpx
 import pytest
 
 from fastgtp import (
+    AnalysisFailure,
+    AnalysisRequest,
     AnalysisService,
+    GTPTransportManager,
     ProfileError,
     SubprocessGTPTransport,
     create_app,
@@ -297,3 +302,68 @@ def test_main_checks_its_environment(write_profiles, monkeypatch, env, message):
 
     with pytest.raises(RuntimeError, match=message):
         runpy.run_module("fastgtp.server.main")
+
+
+@pytest.mark.parametrize(
+    "method, path, body, content_type",
+    [
+        ("GET", "/gtp/v1/nope", None, "application/problem+json"),
+        ("PATCH", "/gtp/v1/analyses/x", None, "application/problem+json"),
+        ("POST", "/gtp/v1/analyses", {"profile": "t"}, "application/problem+json"),
+        ("GET", "/gtp/nope/name", None, "application/json"),
+    ],
+)
+def test_root_path_in_front_of_the_path_keeps_v1_errors(
+    write_profiles, method, path, body, content_type
+):
+    # uvicorn --root-path puts the root path in front of scope["path"].
+    service = AnalysisService(load_profiles(write_profiles({"t": []})))
+    manager = GTPTransportManager(SubprocessGTPTransport(fake_engine_command()))
+    app = create_app(manager, analysis=service)
+
+    async def scenario():
+        transport = httpx.ASGITransport(app=app, root_path="/gtp")
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            return await c.request(method, path, json=body)
+
+    res = asyncio.run(scenario())
+
+    assert res.headers["content-type"] == content_type
+    if content_type == "application/problem+json":
+        assert "input" not in res.text
+
+
+def test_engine_that_cannot_start_is_an_engine_error(write_profiles):
+    async def scenario():
+        service = AnalysisService(load_profiles(write_profiles({"t": []})))
+        await service.start()
+        profile = dataclasses.replace(
+            service.profiles["t"], command=("/nonexistent/engine",)
+        )
+        request = AnalysisRequest(
+            profile="t",
+            board={"width": 9, "height": 9},
+            rules="japanese",
+            komi=6.5,
+            moves=[],
+        )
+        try:
+            with pytest.raises(AnalysisFailure) as failure:
+                await service.runner(profile, request)(lambda done: None)
+        finally:
+            await service.close()
+        return failure.value
+
+    failure = asyncio.run(scenario())
+
+    assert failure.problem()["title"] == "Engine error"
+
+
+def test_openapi_documents_problem_responses(write_profiles):
+    service = AnalysisService(load_profiles(write_profiles({"t": []})))
+    responses = create_app(analysis=service).openapi()["paths"]["/v1/analyses"]["post"][
+        "responses"
+    ]
+
+    for status in ("422", "501", "503"):
+        assert list(responses[status]["content"]) == ["application/problem+json"]
