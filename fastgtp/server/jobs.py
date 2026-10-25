@@ -8,7 +8,6 @@ period because clients are expected to store the results themselves.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import time
 import uuid
@@ -129,11 +128,14 @@ class JobManager:
         job = self.get(job_id)
         if job is None:
             return False
+        # Forgotten first, so its idempotency key cannot return it while
+        # its engine is still being stopped.
+        self._forget(job)
         if not job.finished and job.task is not None:
             job.task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await job.task
-        self._forget(job)
+            # wait() leaves the job's cancellation inside the job, while a
+            # cancellation of this caller still reaches it.
+            await asyncio.wait({job.task})
         return True
 
     async def close(self) -> None:

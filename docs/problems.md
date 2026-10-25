@@ -36,6 +36,10 @@ The `type` field names the kind of error. It is this page's URL followed by one 
 
 422, in a failed job. The engine refused a move. `field` names the move, for example `"moves[10]"`.
 
+## illegal-setup
+
+422, in a failed job. The engine refused the setup stones, for example a stone with no liberties. `field` is `"setup"`.
+
 ## engine-error
 
 502, in a failed job. The engine stopped, or answered in a way fastgtp could not use. The server log has the details.

@@ -49,6 +49,7 @@ ANALYSIS_NOT_SUPPORTED = ProblemType(
 QUEUE_FULL = ProblemType(503, "Queue full", "queue-full")
 UNKNOWN_JOB = ProblemType(404, "Unknown job", "unknown-job")
 ILLEGAL_MOVE = ProblemType(422, "Illegal move", "illegal-move")
+ILLEGAL_SETUP = ProblemType(422, "Illegal setup", "illegal-setup")
 ENGINE_ERROR = ProblemType(502, "Engine error", "engine-error")
 ANALYSIS_TIMED_OUT = ProblemType(504, "Analysis timed out", "analysis-timed-out")
 INTERNAL_ERROR = ProblemType(500, "Internal error", "internal-error")

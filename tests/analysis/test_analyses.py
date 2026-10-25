@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 
 import pytest
@@ -405,3 +406,86 @@ def test_long_strings_are_not_echoed_back(make_client):
 
     assert res.status_code == 422
     assert len(res.content) < 2000
+
+
+def engine_pids(engine_log) -> list[int]:
+    return [
+        int(line.split()[1])
+        for line in engine_log.read_text().splitlines()
+        if line.startswith("pid ")
+    ]
+
+
+def is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(
+    "setup, first", [([], "B"), ([{"color": "B", "point": "D4"}], "W")]
+)
+def test_default_initial_player(make_client, engine_log, setup, first):
+    client = make_client({"test-v1": ["--log", str(engine_log)]})
+
+    wait_for_job(
+        client, submit(client, {**GAME, "setup": setup, "moves": []}).json()["id"]
+    )
+
+    assert f"kata-search_analyze {first} interval 100000 rootInfo true" in (
+        engine_log.read_text().splitlines()
+    )
+
+
+def test_delete_ends_the_engine_process(make_client, engine_log):
+    client = make_client(
+        {"test-v1": ["--analyze-seconds", "30", "--log", str(engine_log)]}
+    )
+    job = submit(client).json()
+    wait_for_status(client, job["id"], "running")
+
+    client.delete(f"/v1/analyses/{job['id']}")
+
+    assert not is_running(engine_pids(engine_log)[-1])
+
+
+def test_shutdown_ends_running_engines(make_client, engine_log):
+    client = make_client(
+        {"test-v1": ["--analyze-seconds", "30", "--log", str(engine_log)]}
+    )
+    job = submit(client).json()
+    wait_for_status(client, job["id"], "running")
+    pid = engine_pids(engine_log)[-1]
+
+    client.__exit__(None, None, None)
+
+    assert not is_running(pid)
+
+
+def test_refused_setup_fails_the_job_on_the_setup_field(make_client):
+    client = make_client({"test-v1": ["--reject-setup"]})
+
+    done = wait_for_job(client, submit(client).json()["id"])
+
+    assert done["status"] == "failed"
+    assert done["error"]["status"] == 422
+    assert done["error"]["field"] == "setup"
+
+
+def test_405_lists_every_method_of_the_path(make_client):
+    client = make_client()
+
+    res = client.patch("/v1/analyses/some-id")
+
+    assert res.status_code == 405
+    assert res.headers["allow"] == "DELETE, GET"
+
+
+def test_location_keeps_the_root_path(make_client):
+    client = make_client(root_path="/gtp")
+
+    res = submit(client)
+
+    assert res.headers["location"] == f"/gtp/v1/analyses/{res.json()['id']}"

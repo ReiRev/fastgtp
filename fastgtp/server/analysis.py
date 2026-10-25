@@ -23,7 +23,7 @@ from pydantic import (
 )
 
 from .gtp import ParsedResponse, build_command, parse_response
-from .problems import ENGINE_ERROR, ILLEGAL_MOVE, ProblemType
+from .problems import ENGINE_ERROR, ILLEGAL_MOVE, ILLEGAL_SETUP, ProblemType
 from .transport import GTPTransport
 
 logger = logging.getLogger(__name__)
@@ -235,7 +235,13 @@ async def analyze_winrates(
         stones = [
             part for stone in request.setup for part in (stone.color, stone.point)
         ]
-        await _send(transport, "set_position", stones)
+        response = await _raw(transport, build_command("set_position", stones))
+        if not response.success:
+            raise AnalysisFailure(
+                ILLEGAL_SETUP,
+                "The engine refused the setup stones",
+                field="setup",
+            )
 
     results: list[dict[str, Any]] = []
     for turn in range(request.turn_count):

@@ -96,7 +96,7 @@ An analysis can take minutes, so it runs as a job. Submit the game, then poll un
 ```bash
 curl -i -X POST http://localhost:8000/v1/analyses \
   -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: game-42' \
+  -H 'Idempotency-Key: 4f1c2b9e-6d0a-4c57-9a43-2f8e1b7d5c10' \
   -d '{
     "profile": "winrate-v1",
     "board": {"width": 19, "height": 19},
@@ -116,12 +116,14 @@ curl http://localhost:8000/v1/analyses/<id>
 #      "turns": [{"turn": 0, "blackWinrate": 0.47}, {"turn": 1, "blackWinrate": 0.46}, ...]}}
 ```
 
+- `rules` is one of `japanese`, `chinese`, `korean`, `aga`, `tromp-taylor`, `new-zealand`, and `stone-scoring`. `board.width` and `board.height` are 2 to 19. `komi` is a multiple of 0.5 from -150 to 150.
 - Every position is analyzed. Turn `n` in the result is the position after `n` moves, so turn 0 is the position before the first move.
 - A request holds at most 1000 moves. fastgtp does not limit the size of the request body, so set a limit in the reverse proxy in front of it.
 - `initialPlayer` sets the side that plays first when there are no moves. It defaults to White when there are setup stones, and to Black otherwise. When there are moves, it must match the color of the first one.
 - `conditions` records what decided the numbers. Store it with the results.
-- A job is `queued`, `running`, `succeeded`, `failed`, or `canceled`. A failed job has an `error` in RFC 9457 problem details form, for example an illegal move with its index in `field`.
+- A job is `queued`, `running`, `succeeded`, or `failed`. A failed job has an `error` in RFC 9457 problem details form, for example an illegal move with its index in `field`.
 - `DELETE /v1/analyses/<id>` deletes a job, and stops it first if it has not finished. `GET /v1/profiles` lists the profiles and their conditions, and `GET /v1/health` reports job counts.
+- `Idempotency-Key` is optional. Use a random value such as a UUID, because keys are shared by all clients. Sending the same key with the same body returns the same job instead of a new one, and the same key with a different body is a 422. A key is free again once its job is deleted or dropped.
 - Jobs live in memory. After a restart, a job returns 404, and the client should submit it again. Finished jobs are dropped after the retention period.
 - Errors from `/v1` routes use `application/problem+json`, and their `type` names the kind of error. [docs/problems.md](docs/problems.md) lists the kinds. The session routes keep their existing error format.
 

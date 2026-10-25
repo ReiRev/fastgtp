@@ -12,6 +12,7 @@ Flags before the KataGo-style arguments change its behavior for a test.
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sys
 import time
@@ -44,6 +45,7 @@ def main() -> None:
     parser.add_argument("--close-stdout-on-analyze", action="store_true")
     parser.add_argument("--no-root-info", action="store_true")
     parser.add_argument("--hang-on")
+    parser.add_argument("--reject-setup", action="store_true")
     parser.add_argument("--log")
     args, engine_args = parser.parse_known_args()
 
@@ -52,6 +54,7 @@ def main() -> None:
 
     log = open(args.log, "a", encoding="utf-8") if args.log else None
     if log:
+        log.write(f"pid {os.getpid()}\n")
         log.write("argv " + " ".join(engine_args) + "\n")
         log.flush()
     if args.stderr_bytes:
@@ -90,6 +93,8 @@ def main() -> None:
             stones.clear()
             moves_played = 0
             reply(True)
+        elif name == "set_position" and args.reject_setup:
+            reply(False, "illegal position")
         elif name == "set_position":
             stones = dict(zip(rest[1::2], rest[0::2]))
             reply(True)

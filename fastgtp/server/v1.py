@@ -18,9 +18,11 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match
 
 from .analysis import (
     AnalysisFailure,
@@ -233,12 +235,13 @@ def install_problem_handler(app: FastAPI) -> None:
             title = HTTPStatus(exc.status_code).phrase
         except ValueError:
             title = "Error"
+        headers = exc.headers
+        if exc.status_code == 405:
+            # Starlette lists only the methods of the first route that matches
+            # the path, but several routes can share it.
+            headers = {**(headers or {}), "Allow": _allowed_methods(request)}
         plain = ProblemType(exc.status_code, title)
-        return problem_response(
-            plain,
-            str(exc.detail),
-            headers=exc.headers,
-        )
+        return problem_response(plain, str(exc.detail), headers=headers)
 
     app.add_exception_handler(RequestValidationError, validation_handler)
     app.add_exception_handler(StarletteHTTPException, http_handler)
@@ -275,6 +278,7 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
     )
     async def submit_analysis(  # type: ignore[unused-coroutine]
         request: AnalysisRequest,
+        http_request: Request,
         response: Response,
         idempotency_key: str | None = Header(
             default=None, alias="Idempotency-Key", max_length=255
@@ -323,7 +327,9 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
                 "This Idempotency-Key was already used for a different request.",
             )
 
-        response.headers["Location"] = f"{PREFIX}/analyses/{job.id}"
+        response.headers["Location"] = str(
+            http_request.url_for("get_analysis", job_id=job.id).path
+        )
         return job_response(job, response)
 
     @router.get(
@@ -373,6 +379,17 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         )
 
     return router
+
+
+def _allowed_methods(request: Request) -> str:
+    methods: set[str] = set()
+    for route in request.app.router.routes:
+        if (
+            isinstance(route, APIRoute)
+            and route.matches(request.scope)[0] != Match.NONE
+        ):
+            methods |= route.methods
+    return ", ".join(sorted(methods))
 
 
 def _is_v1(path: str) -> bool:

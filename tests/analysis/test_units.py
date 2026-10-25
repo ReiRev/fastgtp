@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import runpy
 
 import pytest
 
@@ -216,3 +217,83 @@ def test_engine_that_exited_is_replaced_only_with_respawn(respawn):
             await transport.aclose()
 
     asyncio.run(scenario())
+
+
+def test_deleted_job_frees_its_idempotency_key_at_once():
+    async def scenario():
+        jobs = JobManager(
+            max_running=2, max_queued=10, timeout_seconds=10, retention_seconds=60
+        )
+
+        async def slow_to_stop(on_progress):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+                raise
+            return {}
+
+        first = jobs.submit(slow_to_stop, fingerprint="f", total=1, idempotency_key="k")
+        await asyncio.sleep(0)
+        deleting = asyncio.create_task(jobs.delete(first.id))
+        await asyncio.sleep(0.05)
+
+        again = jobs.submit(slow_to_stop, fingerprint="f", total=1, idempotency_key="k")
+
+        assert again.id != first.id
+        assert await deleting is True
+        await jobs.close()
+
+    asyncio.run(scenario())
+
+
+def test_cancelling_a_delete_cancels_its_caller():
+    async def scenario():
+        jobs = JobManager(
+            max_running=1, max_queued=10, timeout_seconds=10, retention_seconds=60
+        )
+
+        async def slow_to_stop(on_progress):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.5)
+                raise
+            return {}
+
+        job = jobs.submit(slow_to_stop, fingerprint="f", total=1)
+        await asyncio.sleep(0)
+        deleting = asyncio.create_task(jobs.delete(job.id))
+        await asyncio.sleep(0.1)
+        deleting.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await deleting
+        await jobs.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "env, message",
+    [
+        ({}, "FASTGTP_ENGINE, FASTGTP_PROFILES"),
+        (
+            {"FASTGTP_PROFILES": "PROFILES", "FASTGTP_MAX_RUNNING_JOBS": "0"},
+            "at least 1",
+        ),
+        (
+            {"FASTGTP_PROFILES": "PROFILES", "FASTGTP_JOB_TIMEOUT_SECONDS": "x"},
+            "integer",
+        ),
+    ],
+)
+def test_main_checks_its_environment(write_profiles, monkeypatch, env, message):
+    profiles = write_profiles({"t": []})
+    for name in ("FASTGTP_ENGINE", "FASTGTP_PROFILES"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, str(profiles) if value == "PROFILES" else value)
+
+    with pytest.raises(RuntimeError, match=message):
+        runpy.run_module("fastgtp.server.main")

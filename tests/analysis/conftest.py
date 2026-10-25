@@ -62,6 +62,7 @@ def make_client(write_profiles) -> Iterator[Callable[..., TestClient]]:
         profiles: dict[str, list[str]] | None = None,
         *,
         with_gtp: bool = False,
+        root_path: str = "",
         max_turns: int = 10,
         **settings,
     ) -> TestClient:
@@ -72,7 +73,7 @@ def make_client(write_profiles) -> Iterator[Callable[..., TestClient]]:
             if with_gtp
             else None
         )
-        client = TestClient(create_app(manager, analysis=service))
+        client = TestClient(create_app(manager, analysis=service), root_path=root_path)
         client.__enter__()
         clients.append(client)
         return client
