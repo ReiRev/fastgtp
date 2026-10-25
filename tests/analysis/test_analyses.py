@@ -81,38 +81,6 @@ def test_analysis_sends_the_game_as_gtp_commands(make_client, engine_log):
     ]
 
 
-def test_analysis_searches_only_the_requested_turns(make_client, engine_log):
-    client = make_client({"test-v1": ["--log", str(engine_log)]})
-
-    job = submit(client, {**GAME, "turns": [2, 0, 0]}).json()
-    done = wait_for_job(client, job["id"])
-
-    assert done["result"]["turns"] == [
-        {"turn": 0, "blackWinrate": fake_winrate(0, "W")},
-        {"turn": 2, "blackWinrate": fake_winrate(2, "W")},
-    ]
-    log = engine_log.read_text().splitlines()
-    assert sum(line.startswith("kata-search_analyze") for line in log) == 2
-    assert [line for line in log if line.startswith("play")] == [
-        "play W Q4",
-        "play B pass",
-    ]
-
-
-def test_illegal_move_after_the_last_requested_turn_fails_the_job(make_client):
-    client = make_client()
-    body = {
-        **GAME,
-        "moves": [{"color": "W", "point": "Q4"}, {"color": "B", "point": "D4"}],
-        "turns": [0],
-    }
-
-    done = wait_for_job(client, submit(client, body).json()["id"])
-
-    assert done["status"] == "failed"
-    assert done["error"]["field"] == "moves[1]"
-
-
 def test_rectangular_board_and_initial_player(make_client, engine_log):
     client = make_client({"test-v1": ["--log", str(engine_log)]})
     body = {
@@ -189,7 +157,7 @@ def test_unknown_profile_is_422(make_client):
         {"moves": [{"color": "W", "point": "T20"}]},
         {"setup": [{"color": "B", "point": "pass"}]},
         {"setup": [{"color": "B", "point": "D4"}, {"color": "W", "point": "D4"}]},
-        {"turns": [3]},
+        {"turns": [0]},
         {"board": {"width": 25, "height": 25}},
         {"initialPlayer": "B"},
         {"moves": [{"color": "B", "point": "pass"}] * 1001},
@@ -214,7 +182,7 @@ def test_too_many_turns_is_rejected(make_client):
     res = submit(client)
 
     assert res.status_code == 422
-    assert res.json()["field"] == "turns"
+    assert res.json()["field"] == "moves"
 
 
 def test_full_queue_is_503_with_retry_after(make_client):
@@ -413,7 +381,6 @@ def test_search_without_root_info_fails_the_job(make_client):
         ({"komi": 6.3}, "komi"),
         ({"moves": [{"color": "W", "point": "T20"}]}, "moves"),
         ({"setup": [{"color": "B", "point": "pass"}]}, "setup"),
-        ({"turns": [3]}, "turns"),
         ({"initialPlayer": "B"}, "moves"),
     ],
 )

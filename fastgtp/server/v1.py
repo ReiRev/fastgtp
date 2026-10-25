@@ -294,12 +294,11 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
                 ANALYSIS_NOT_SUPPORTED,
                 f"The engine of profile {profile.name!r} lacks {sorted(missing)}",
             )
-        turns = request.resolved_turns()
-        if len(turns) > profile.max_turns:
+        if request.turn_count > profile.max_turns:
             return problem_response(
                 TOO_MANY_TURNS,
                 f"Profile {profile.name!r} analyzes at most {profile.max_turns} turns per job",
-                field="turns",
+                field="moves",
             )
 
         fingerprint = hashlib.sha256(
@@ -309,7 +308,7 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
             job = service.jobs.submit(
                 service.runner(profile, request),
                 fingerprint=fingerprint,
-                total=len(turns),
+                total=request.turn_count,
                 idempotency_key=idempotency_key,
             )
         except QueueFull:

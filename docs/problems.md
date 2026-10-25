@@ -14,7 +14,7 @@ The `type` field names the kind of error. It is this page's URL followed by one 
 
 ## too-many-turns
 
-422. The job would analyze more positions than the profile allows. `field` is `"turns"`. The limit is `limits.maxTurns` in `GET /v1/profiles`.
+422. The job would analyze more positions than the profile allows. `field` is `"moves"`. The limit is `limits.maxTurns` in `GET /v1/profiles`.
 
 ## idempotency-key-reused
 

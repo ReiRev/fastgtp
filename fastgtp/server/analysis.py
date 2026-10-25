@@ -109,7 +109,7 @@ class Move(BaseModel):
 
 
 class AnalysisRequest(BaseModel):
-    """A game to analyze, and the positions in it to analyze."""
+    """A game to analyze. Every position in it is analyzed."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -126,14 +126,6 @@ class AnalysisRequest(BaseModel):
         description="Side to play first. Defaults to W with setup stones, else B.",
     )
     moves: list[Move] = Field(max_length=MAX_MOVES)
-    turns: list[int] | None = Field(
-        default=None,
-        max_length=MAX_MOVES + 1,
-        description=(
-            "Positions to analyze. Turn n is the position after n moves. "
-            "Defaults to every position."
-        ),
-    )
 
     # Each check is a field validator, so its error is reported at that field.
     @field_validator("komi")
@@ -177,24 +169,10 @@ class AnalysisRequest(BaseModel):
             )
         return moves
 
-    @field_validator("turns")
-    @classmethod
-    def _check_turns(
-        cls, turns: list[int] | None, info: ValidationInfo
-    ) -> list[int] | None:
-        moves = info.data.get("moves")
-        if turns is None or moves is None:
-            return turns
-        for turn in turns:
-            if turn < 0 or turn > len(moves):
-                raise ValueError(f"turns: {turn} is outside 0..{len(moves)}")
-        return sorted(set(turns))
-
-    def resolved_turns(self) -> list[int]:
-        """Return the turns to analyze in ascending order."""
-        if self.turns is None:
-            return list(range(len(self.moves) + 1))
-        return list(self.turns)
+    @property
+    def turn_count(self) -> int:
+        """Return the number of positions in the game, the empty one included."""
+        return len(self.moves) + 1
 
     def player_at(self, turn: int) -> Color:
         """Return the side to play in the position after ``turn`` moves."""
@@ -238,10 +216,10 @@ async def analyze_winrates(
     request: AnalysisRequest,
     on_progress: Callable[[int], None],
 ) -> list[dict[str, Any]]:
-    """Replay the game and return Black's win rate at each requested turn.
+    """Replay the game and return Black's win rate after each move.
 
-    Every move is played, also after the last requested turn, so an illegal
-    move anywhere in the record fails the job.
+    Turn ``n`` is the position after ``n`` moves, so turn 0 is the position
+    before the first move.
     """
     board = request.board
     if board.width == board.height:
@@ -259,13 +237,11 @@ async def analyze_winrates(
         ]
         await _send(transport, "set_position", stones)
 
-    wanted = set(request.resolved_turns())
     results: list[dict[str, Any]] = []
-    for turn in range(len(request.moves) + 1):
-        if turn in wanted:
-            winrate = await _search_winrate(transport, request.player_at(turn))
-            results.append({"turn": turn, "blackWinrate": winrate})
-            on_progress(len(results))
+    for turn in range(request.turn_count):
+        winrate = await _search_winrate(transport, request.player_at(turn))
+        results.append({"turn": turn, "blackWinrate": winrate})
+        on_progress(len(results))
         if turn < len(request.moves):
             await _play(transport, turn, request.moves[turn])
     return results
