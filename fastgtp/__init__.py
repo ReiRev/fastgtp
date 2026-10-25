@@ -18,6 +18,9 @@ from .server.router import (
     get_transport_manager,
 )
 from .server.transport import GTPTransport, GTPTransportManager, SubprocessGTPTransport
+from .server.analysis import AnalysisFailure, AnalysisRequest
+from .server.profiles import Profile, ProfileError, load_profiles
+from .server.v1 import AnalysisService, JobSettings
 
 __all__ = [
     "FastGtp",
@@ -36,4 +39,11 @@ __all__ = [
     "build_command",
     "parse_command_line",
     "parse_response",
+    "AnalysisFailure",
+    "AnalysisRequest",
+    "AnalysisService",
+    "JobSettings",
+    "Profile",
+    "ProfileError",
+    "load_profiles",
 ]

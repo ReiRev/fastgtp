@@ -9,6 +9,10 @@ import uuid
 from asyncio.subprocess import PIPE, Process
 from typing import Protocol, Sequence
 
+_STDERR_CHUNK_BYTES = 4096
+_STDERR_TAIL_BYTES = 8192
+_TERMINATE_GRACE_SECONDS = 5.0
+
 
 class GTPTransport(Protocol):
     """Abstraction over something that can execute GTP commands."""
@@ -40,6 +44,8 @@ class SubprocessGTPTransport(GTPTransport):
         self._command: tuple[str, ...] = parsed
         self._process: Process | None = None
         self._lock = asyncio.Lock()
+        self._stderr_tail = bytearray()
+        self._stderr_task: asyncio.Task[None] | None = None
 
     async def open(self) -> None:
         """Spawn the subprocess if needed."""
@@ -54,9 +60,21 @@ class SubprocessGTPTransport(GTPTransport):
             if self._process.stdin is not None:
                 self._process.stdin.close()
             if self._process.returncode is None:
-                self._process.terminate()
                 with contextlib.suppress(ProcessLookupError):
+                    self._process.terminate()
+                try:
+                    await asyncio.wait_for(
+                        self._process.wait(), _TERMINATE_GRACE_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    with contextlib.suppress(ProcessLookupError):
+                        self._process.kill()
                     await self._process.wait()
+            if self._stderr_task is not None:
+                self._stderr_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._stderr_task
+                self._stderr_task = None
             self._process = None
 
     async def _ensure_process(self) -> Process:
@@ -67,7 +85,21 @@ class SubprocessGTPTransport(GTPTransport):
                 stdout=PIPE,
                 stderr=PIPE,
             )
+            if self._stderr_task is not None:
+                self._stderr_task.cancel()
+            self._stderr_tail.clear()
+            # An engine that logs to stderr blocks once the pipe buffer fills,
+            # so stderr is read for the whole life of the process.
+            self._stderr_task = asyncio.create_task(self._drain_stderr(self._process))
         return self._process
+
+    async def _drain_stderr(self, process: Process) -> None:
+        if process.stderr is None:
+            return
+        # Fixed-size reads, because readline() stops at a line over 64 KiB.
+        while chunk := await process.stderr.read(_STDERR_CHUNK_BYTES):
+            self._stderr_tail += chunk
+            del self._stderr_tail[:-_STDERR_TAIL_BYTES]
 
     async def send_command(self, command: str) -> str:
         async with self._lock:
@@ -86,10 +118,15 @@ class SubprocessGTPTransport(GTPTransport):
             while True:
                 line_bytes = await process.stdout.readline()
                 if not line_bytes:
-                    stderr_output = ""
-                    if process.stderr is not None:
-                        remaining = await process.stderr.read()
-                        stderr_output = remaining.decode("utf-8", errors="replace")
+                    if self._stderr_task is not None:
+                        with contextlib.suppress(
+                            asyncio.CancelledError, asyncio.TimeoutError
+                        ):
+                            await asyncio.wait_for(
+                                asyncio.shield(self._stderr_task),
+                                _TERMINATE_GRACE_SECONDS,
+                            )
+                    stderr_output = self._stderr_tail.decode("utf-8", errors="replace")
                     raise RuntimeError(
                         "GTP engine terminated unexpectedly"
                         + (f": {stderr_output.strip()}" if stderr_output else "")

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .gtp import build_command, parse_response
 from .transport import GTPTransport, GTPTransportManager
+from .v1 import AnalysisService, create_v1_router, install_problem_handler
 
 ColorType = Literal["B", "W"]
 
@@ -387,13 +388,20 @@ class FastGtp(APIRouter):
 
 
 def create_app(
-    transport_manager: GTPTransportManager,
+    transport_manager: GTPTransportManager | None = None,
     *,
+    analysis: AnalysisService | None = None,
     app_kwargs: dict[str, Any] | None = None,
     router_kwargs: dict[str, Any] | None = None,
 ) -> FastAPI:
-    """Create a FastAPI application that exposes the GTP router."""
+    """Create a FastAPI application.
 
+    ``transport_manager`` enables the session-based GTP routes, and
+    ``analysis`` enables the ``/v1`` analysis routes. At least one is needed.
+    """
+
+    if transport_manager is None and analysis is None:
+        raise ValueError("create_app needs a transport manager or an analysis service")
     if app_kwargs is None:
         app_kwargs = {}
     if router_kwargs is None:
@@ -401,18 +409,31 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        if analysis is not None:
+            await analysis.start()
         try:
             yield
         finally:
-            await transport_manager.close_all()
+            if analysis is not None:
+                await analysis.close()
+            if transport_manager is not None:
+                await transport_manager.close_all()
 
     app = FastAPI(title="fastgtp", lifespan=lifespan, **app_kwargs)
-    fastgtp_router = FastGtp(**router_kwargs)
-    app.include_router(fastgtp_router)
 
-    async def override_get_manager() -> GTPTransportManager:
-        return transport_manager
+    if analysis is not None:
+        install_problem_handler(app)
+        # "/v1/..." also matches the "/{session_id}/..." routes, so the /v1
+        # routes are added first to take precedence.
+        app.include_router(create_v1_router(analysis))
 
-    app.dependency_overrides[get_transport_manager] = override_get_manager
+    if transport_manager is not None:
+        fastgtp_router = FastGtp(**router_kwargs)
+        app.include_router(fastgtp_router)
+
+        async def override_get_manager() -> GTPTransportManager:
+            return transport_manager
+
+        app.dependency_overrides[get_transport_manager] = override_get_manager
 
     return app
