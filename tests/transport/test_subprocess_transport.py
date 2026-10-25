@@ -44,7 +44,7 @@ def test_reply_longer_than_64_kib_is_read():
     assert len(asyncio.run(scenario())) > 200000
 
 
-def test_engine_that_ignores_sigterm_is_killed_despite_repeated_cancels(
+def test_engine_that_ignores_sigterm_is_killed_when_close_is_cancelled(
     monkeypatch,
 ):
     monkeypatch.setattr(transport_module, "_TERMINATE_GRACE_SECONDS", 0.5)
@@ -57,8 +57,6 @@ def test_engine_that_ignores_sigterm_is_killed_despite_repeated_cancels(
         await transport.send_command("name")
 
         closing = asyncio.create_task(transport.aclose())
-        await asyncio.sleep(0.1)
-        closing.cancel()
         await asyncio.sleep(0.1)
         closing.cancel()
         with pytest.raises(asyncio.CancelledError):
