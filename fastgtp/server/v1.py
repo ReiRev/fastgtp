@@ -169,14 +169,23 @@ class Problem(BaseModel):
     detail: str
 
 
+_RETRY_AFTER_HEADER = {
+    "description": "Seconds to wait before trying again.",
+    "schema": {"type": "integer"},
+}
+
+
 def _problems(*statuses: int) -> dict[int | str, dict[str, Any]]:
-    return {
+    responses: dict[int | str, dict[str, Any]] = {
         status: {
             "description": HTTPStatus(status).phrase,
             "content": {PROBLEM_MEDIA_TYPE: {"schema": Problem.model_json_schema()}},
         }
         for status in statuses
     }
+    if 503 in responses:
+        responses[503]["headers"] = {"Retry-After": _RETRY_AFTER_HEADER}
+    return responses
 
 
 class _CamelModel(BaseModel):
@@ -188,6 +197,36 @@ class Progress(_CamelModel):
     total: int
 
 
+class EngineConditions(_CamelModel):
+    name: str
+    version: str
+
+
+class ModelConditions(_CamelModel):
+    name: str
+    sha256: str
+
+
+class Conditions(_CamelModel):
+    """Everything about a profile that decides its results."""
+
+    engine: EngineConditions
+    model: ModelConditions
+    config_sha256: str
+    visits: int
+
+
+class TurnResult(_CamelModel):
+    turn: int
+    black_winrate: float
+
+
+class AnalysisResult(_CamelModel):
+    profile: str
+    conditions: Conditions
+    turns: list[TurnResult]
+
+
 class JobResponse(_CamelModel):
     """The state of an analysis job."""
 
@@ -197,14 +236,14 @@ class JobResponse(_CamelModel):
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    result: dict[str, Any] | None = None
-    error: dict[str, Any] | None = None
+    result: AnalysisResult | None = None
+    error: Problem | None = None
 
 
 class ProfileResponse(_CamelModel):
     name: str
     available: bool
-    conditions: dict[str, Any]
+    conditions: Conditions
     limits: dict[str, int]
 
 
@@ -297,22 +336,34 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
             error=job.error,
         )
 
-    def unknown_job(job_id: str) -> JSONResponse:
-        return problem_response(UNKNOWN_JOB, f"No job with id {job_id}")
+    def unknown_job() -> JSONResponse:
+        return problem_response(UNKNOWN_JOB, "No job has this id")
 
     @router.post(
         "/analyses",
         status_code=202,
         response_model=JobResponse,
         response_model_exclude_none=True,
-        responses=_problems(422, 501, 503),
+        responses={
+            202: {
+                "description": "The job is queued.",
+                "headers": {
+                    "Location": {
+                        "description": "URL of the job.",
+                        "schema": {"type": "string"},
+                    },
+                    "Retry-After": _RETRY_AFTER_HEADER,
+                },
+            },
+            **_problems(422, 501, 503),
+        },
     )
     async def submit_analysis(  # type: ignore[unused-coroutine]
         request: AnalysisRequest,
         http_request: Request,
         response: Response,
         idempotency_key: str | None = Header(
-            default=None, alias="Idempotency-Key", max_length=255
+            default=None, alias="Idempotency-Key", min_length=1, max_length=255
         ),
     ):
         """Queue a win rate analysis of a game."""
@@ -373,14 +424,14 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         """Return the state of a job, with its result once it has finished."""
         job = service.jobs.get(job_id)
         if job is None:
-            return unknown_job(job_id)
+            return unknown_job()
         return job_response(job, response)
 
     @router.delete("/analyses/{job_id}", status_code=204, responses=_problems(404, 422))
     async def delete_analysis(job_id: str):  # type: ignore[unused-coroutine]
         """Delete a job. A job that has not finished is stopped first."""
         if not await service.jobs.delete(job_id):
-            return unknown_job(job_id)
+            return unknown_job()
         return Response(status_code=204)
 
     @router.get("/profiles", response_model=ProfilesResponse)

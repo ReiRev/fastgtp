@@ -489,3 +489,27 @@ def test_location_keeps_the_root_path(make_client):
     res = submit(client)
 
     assert res.headers["location"] == f"/gtp/v1/analyses/{res.json()['id']}"
+
+
+def test_empty_idempotency_key_is_rejected(make_client):
+    client = make_client()
+
+    res = submit(client, **{"Idempotency-Key": ""})
+
+    assert res.status_code == 422
+
+
+def test_komi_must_be_a_number(make_client):
+    client = make_client()
+
+    assert submit(client, {**GAME, "komi": True}).status_code == 422
+    assert submit(client, {**GAME, "komi": 7}).status_code == 202
+
+
+def test_unknown_job_does_not_echo_its_id(make_client):
+    client = make_client()
+
+    res = client.get("/v1/analyses/" + "a" * 10_000)
+
+    assert res.status_code == 404
+    assert len(res.content) < 500

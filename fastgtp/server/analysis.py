@@ -118,7 +118,7 @@ class AnalysisRequest(BaseModel):
     )
     board: Board
     rules: Rules
-    komi: float
+    komi: float = Field(strict=True)
     setup: list[Stone] = Field(default_factory=list, max_length=_MAX_SETUP_STONES)
     initial_player: Color | None = Field(
         default=None,
