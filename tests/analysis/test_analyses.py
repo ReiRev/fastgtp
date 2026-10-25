@@ -84,14 +84,15 @@ def test_analysis_sends_the_game_as_gtp_commands(make_client, engine_log):
 def test_analysis_searches_only_the_requested_turns(make_client, engine_log):
     client = make_client({"test-v1": ["--log", str(engine_log)]})
 
-    job = submit(client, {**GAME, "turns": [0]}).json()
+    job = submit(client, {**GAME, "turns": [2, 0, 0]}).json()
     done = wait_for_job(client, job["id"])
 
     assert done["result"]["turns"] == [
-        {"turn": 0, "blackWinrate": fake_winrate(0, "W")}
+        {"turn": 0, "blackWinrate": fake_winrate(0, "W")},
+        {"turn": 2, "blackWinrate": fake_winrate(2, "W")},
     ]
     log = engine_log.read_text().splitlines()
-    assert sum(line.startswith("kata-search_analyze") for line in log) == 1
+    assert sum(line.startswith("kata-search_analyze") for line in log) == 2
     assert [line for line in log if line.startswith("play")] == [
         "play W Q4",
         "play B pass",
@@ -279,9 +280,11 @@ def test_finished_job_is_dropped_after_retention(make_client):
     job = submit(client).json()
     wait_for_job(client, job["id"])
 
-    time.sleep(0.6)
+    deadline = time.monotonic() + 10
+    while (res := client.get(f"/v1/analyses/{job['id']}")).status_code == 200:
+        assert time.monotonic() < deadline
+        time.sleep(0.1)
 
-    res = client.get(f"/v1/analyses/{job['id']}")
     assert res.status_code == 404
     assert res.json()["title"] == "Unknown job"
 
@@ -384,3 +387,54 @@ def test_unknown_gtp_routes_keep_their_format(make_client):
 
     assert res.status_code == 404
     assert res.headers["content-type"] == "application/json"
+
+
+def test_timeout_wins_over_an_engine_that_closed_its_output(make_client):
+    client = make_client({"test-v1": ["--close-stdout-on-analyze"]}, timeout_seconds=1)
+
+    done = wait_for_job(client, submit(client).json()["id"])
+
+    assert done["status"] == "failed"
+    assert done["error"]["status"] == 504
+
+
+def test_search_without_root_info_fails_the_job(make_client):
+    client = make_client({"test-v1": ["--no-root-info"]})
+
+    done = wait_for_job(client, submit(client).json()["id"])
+
+    assert done["status"] == "failed"
+    assert done["error"]["detail"] == "kata-search_analyze returned no rootInfo winrate"
+
+
+@pytest.mark.parametrize(
+    "change, field",
+    [
+        ({"komi": 6.3}, "komi"),
+        ({"moves": [{"color": "W", "point": "T20"}]}, "moves"),
+        ({"setup": [{"color": "B", "point": "pass"}]}, "setup"),
+        ({"turns": [3]}, "turns"),
+        ({"initialPlayer": "B"}, "moves"),
+    ],
+)
+def test_validation_errors_name_their_field(make_client, change, field):
+    client = make_client()
+
+    res = submit(client, {**GAME, **change})
+
+    assert res.status_code == 422
+    assert res.json()["errors"][0]["loc"] == ["body", field]
+
+
+def test_long_strings_are_not_echoed_back(make_client):
+    client = make_client()
+    body = {
+        **GAME,
+        "profile": "p" * 100_000,
+        "moves": [{"color": "B", "point": "x" * 100_000}],
+    }
+
+    res = submit(client, body)
+
+    assert res.status_code == 422
+    assert len(res.content) < 2000

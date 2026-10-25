@@ -33,7 +33,13 @@ class GTPTransport(Protocol):
 class SubprocessGTPTransport(GTPTransport):
     """Execute GTP commands by interacting with an external engine process."""
 
-    def __init__(self, command: Sequence[str] | str):
+    def __init__(self, command: Sequence[str] | str, *, respawn: bool = True):
+        """Wrap the engine started by ``command``.
+
+        With ``respawn`` set, a command sent after the engine has exited
+        starts a new engine. Without it, the command fails, because a new
+        engine has lost the board and settings the old one was given.
+        """
         if isinstance(command, str):
             parsed = tuple(shlex.split(command))
         else:
@@ -42,6 +48,7 @@ class SubprocessGTPTransport(GTPTransport):
             raise ValueError("GTP executable command cannot be empty")
 
         self._command: tuple[str, ...] = parsed
+        self._respawn = respawn
         self._process: Process | None = None
         self._lock = asyncio.Lock()
         self._stderr_tail = bytearray()
@@ -68,6 +75,8 @@ class SubprocessGTPTransport(GTPTransport):
 
     async def _ensure_process(self) -> Process:
         if self._process is None or self._process.returncode is not None:
+            if self._process is not None and not self._respawn:
+                raise RuntimeError("GTP engine terminated unexpectedly")
             self._process = await asyncio.create_subprocess_exec(
                 *self._command,
                 stdin=PIPE,
@@ -108,9 +117,7 @@ class SubprocessGTPTransport(GTPTransport):
                 line_bytes = await process.stdout.readline()
                 if not line_bytes:
                     if self._stderr_task is not None:
-                        with contextlib.suppress(
-                            asyncio.CancelledError, asyncio.TimeoutError
-                        ):
+                        with contextlib.suppress(asyncio.TimeoutError):
                             await asyncio.wait_for(
                                 asyncio.shield(self._stderr_task),
                                 _TERMINATE_GRACE_SECONDS,
@@ -130,7 +137,7 @@ class SubprocessGTPTransport(GTPTransport):
 
     def copy(self) -> SubprocessGTPTransport:
         """Create a fresh transport with the same command."""
-        return SubprocessGTPTransport(self._command)
+        return SubprocessGTPTransport(self._command, respawn=self._respawn)
 
 
 # Shutdowns that outlive a cancelled caller. The event loop keeps only weak

@@ -4,8 +4,15 @@ import asyncio
 
 import pytest
 
-from fastgtp import ProfileError, SubprocessGTPTransport, create_app, load_profiles
+from fastgtp import (
+    AnalysisService,
+    ProfileError,
+    SubprocessGTPTransport,
+    create_app,
+    load_profiles,
+)
 from fastgtp.server import transport as transport_module
+from fastgtp.server import v1 as v1_module
 from fastgtp.server.jobs import JobManager
 
 from .helpers import fake_engine_command
@@ -144,5 +151,68 @@ def test_finished_jobs_are_dropped_after_retention():
         fresh = jobs.submit(runner, fingerprint="g", total=1, idempotency_key="k")
         assert fresh.id != job.id
         await jobs.close()
+
+    asyncio.run(scenario())
+
+
+def test_jobs_that_will_start_at_once_do_not_fill_the_queue():
+    async def scenario():
+        jobs = JobManager(
+            max_running=2, max_queued=1, timeout_seconds=10, retention_seconds=60
+        )
+
+        async def runner(on_progress):
+            await asyncio.sleep(10)
+            return {}
+
+        jobs.submit(runner, fingerprint="a", total=1)
+        jobs.submit(runner, fingerprint="b", total=1)
+        jobs.submit(runner, fingerprint="c", total=1)
+        await asyncio.sleep(0)
+        assert jobs.running_count == 2
+        assert jobs.queued_count == 1
+        await jobs.close()
+
+    asyncio.run(scenario())
+
+
+def test_startup_fails_when_the_engine_does_not_answer(write_profiles, monkeypatch):
+    monkeypatch.setattr(v1_module, "_PROBE_TIMEOUT_SECONDS", 0.5)
+    service = AnalysisService(
+        load_profiles(write_profiles({"t": ["--hang-on", "name"]}))
+    )
+
+    with pytest.raises(RuntimeError, match="did not answer"):
+        asyncio.run(service.start())
+
+
+def test_startup_fails_when_the_engine_errors(write_profiles):
+    service = AnalysisService(
+        load_profiles(write_profiles({"t": ["--without", "name"]}))
+    )
+
+    with pytest.raises(RuntimeError, match="did not start"):
+        asyncio.run(service.start())
+
+
+@pytest.mark.parametrize("respawn", [True, False])
+def test_engine_that_exited_is_replaced_only_with_respawn(respawn):
+    async def scenario():
+        transport = SubprocessGTPTransport(
+            fake_engine_command("--exit-after-play", "1"), respawn=respawn
+        )
+        await transport.open()
+        first = transport._process
+        await transport.send_command("play B D4")
+        await first.wait()
+        try:
+            if respawn:
+                assert (await transport.send_command("name")).startswith("=")
+                assert transport._process is not first
+            else:
+                with pytest.raises(RuntimeError, match="terminated"):
+                    await transport.send_command("name")
+        finally:
+            await transport.aclose()
 
     asyncio.run(scenario())

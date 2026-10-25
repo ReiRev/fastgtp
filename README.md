@@ -117,7 +117,7 @@ curl http://localhost:8000/v1/analyses/<id>
 ```
 
 - `turns` in the request picks the positions to analyze. Turn `n` is the position after `n` moves. Without it, every position is analyzed. Every move is still played, so an illegal move anywhere fails the job.
-- A request holds at most 1000 moves.
+- A request holds at most 1000 moves. fastgtp does not limit the size of the request body, so set a limit in the reverse proxy in front of it.
 - `initialPlayer` sets the side that plays first when there are no moves. It defaults to White when there are setup stones, and to Black otherwise. When there are moves, it must match the color of the first one.
 - `conditions` records what decided the numbers. Store it with the results.
 - A job is `queued`, `running`, `succeeded`, `failed`, or `canceled`. A failed job has an `error` in RFC 9457 problem details form, for example an illegal move with its index in `field`.

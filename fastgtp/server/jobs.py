@@ -71,6 +71,7 @@ class JobManager:
         retention_seconds: float,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._max_running = max_running
         self._max_queued = max_queued
         self._timeout_seconds = timeout_seconds
         self._retention_seconds = retention_seconds
@@ -96,7 +97,10 @@ class JobManager:
                 raise IdempotencyConflict(idempotency_key)
             return existing
 
-        if self.queued_count >= self._max_queued:
+        # A job counts as queued until its task first runs, so jobs that
+        # will take a free slot right away do not count against the queue.
+        free_slots = max(0, self._max_running - self.running_count)
+        if self.queued_count - free_slots >= self._max_queued:
             raise QueueFull()
 
         job = Job(

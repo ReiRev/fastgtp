@@ -82,7 +82,7 @@ class AnalysisService:
     async def start(self) -> None:
         """Start each profile's engine once to learn what it supports."""
         for profile in self.profiles.values():
-            transport = SubprocessGTPTransport(profile.engine_command())
+            transport = SubprocessGTPTransport(profile.engine_command(), respawn=False)
             try:
                 await transport.open()
                 engine = await asyncio.wait_for(
@@ -132,7 +132,7 @@ class AnalysisService:
         """Return the coroutine function that runs one analysis job."""
 
         async def run(on_progress) -> dict[str, Any]:
-            transport = SubprocessGTPTransport(profile.engine_command())
+            transport = SubprocessGTPTransport(profile.engine_command(), respawn=False)
             try:
                 await transport.open()
                 turns = await analyze_winrates(transport, request, on_progress)
@@ -229,7 +229,11 @@ def install_problem_handler(app: FastAPI) -> None:
     async def http_handler(request: Request, exc: StarletteHTTPException):
         if not _is_v1(request.url.path):
             return await http_exception_handler(request, exc)
-        plain = ProblemType(exc.status_code, HTTPStatus(exc.status_code).phrase)
+        try:
+            title = HTTPStatus(exc.status_code).phrase
+        except ValueError:
+            title = "Error"
+        plain = ProblemType(exc.status_code, title)
         return problem_response(
             plain,
             str(exc.detail),
@@ -272,7 +276,9 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
     async def submit_analysis(  # type: ignore[unused-coroutine]
         request: AnalysisRequest,
         response: Response,
-        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        idempotency_key: str | None = Header(
+            default=None, alias="Idempotency-Key", max_length=255
+        ),
     ):
         """Queue a win rate analysis of a game."""
         profile = service.profiles.get(request.profile)

@@ -40,6 +40,10 @@ def main() -> None:
     parser.add_argument("--exit-on-analyze", type=int, default=0)
     parser.add_argument("--stderr-bytes", type=int, default=0)
     parser.add_argument("--ignore-sigterm", action="store_true")
+    parser.add_argument("--exit-after-play", type=int, default=0)
+    parser.add_argument("--close-stdout-on-analyze", action="store_true")
+    parser.add_argument("--no-root-info", action="store_true")
+    parser.add_argument("--hang-on")
     parser.add_argument("--log")
     args, engine_args = parser.parse_known_args()
 
@@ -68,6 +72,9 @@ def main() -> None:
             log.flush()
         name, *rest = line.split()
 
+        if name == args.hang_on:
+            while True:
+                time.sleep(1)
         if name not in commands:
             reply(False, "unknown command")
         elif name == "quit":
@@ -95,13 +102,22 @@ def main() -> None:
                 stones[point] = color
             moves_played += 1
             reply(True)
+            if args.exit_after_play and moves_played >= args.exit_after_play:
+                sys.exit(0)
         elif name == "kata-search_analyze":
             analyses += 1
             if args.exit_on_analyze and analyses >= args.exit_on_analyze:
                 sys.stderr.write("fake engine crashed on purpose\n")
                 sys.stderr.flush()
                 sys.exit(3)
+            if args.close_stdout_on_analyze:
+                sys.stdout.close()
+                while True:
+                    time.sleep(1)
             time.sleep(args.analyze_seconds)
+            if args.no_root_info:
+                reply(True, "info move D4 visits 10 winrate 0.123456 order 0 pv D4")
+                continue
             winrate = 0.5 + 0.01 * moves_played + (0.001 if rest[0] == "W" else 0.0)
             # KataGo prints the moves and rootInfo on one line.
             reply(

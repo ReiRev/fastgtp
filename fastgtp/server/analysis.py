@@ -14,7 +14,13 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+)
 
 from .gtp import ParsedResponse, build_command, parse_response
 from .problems import ENGINE_ERROR, ILLEGAL_MOVE, ProblemType
@@ -51,8 +57,8 @@ _COLUMNS = "ABCDEFGHJKLMNOPQRST"
 _POINT_PATTERN = re.compile(r"^([A-HJ-T])([1-9][0-9]?)$")
 _ROOT_WINRATE_PATTERN = re.compile(r"\brootInfo\b.*?\bwinrate\s+(\S+)")
 _MAX_KOMI = 150.0
-# Far above any real game. The cap keeps one request from tying up the
-# server while its body is validated.
+# Far above any real game. The cap bounds the work one job can ask for. The
+# size of the request body itself is left to the reverse proxy in front.
 MAX_MOVES = 1000
 _MAX_SETUP_STONES = 19 * 19
 
@@ -90,7 +96,7 @@ class Stone(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     color: Color
-    point: str = Field(description="GTP coordinate such as D4.")
+    point: str = Field(max_length=8, description="GTP coordinate such as D4.")
 
 
 class Move(BaseModel):
@@ -99,7 +105,7 @@ class Move(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     color: Color
-    point: str = Field(description="GTP coordinate such as D4, or pass.")
+    point: str = Field(max_length=8, description="GTP coordinate such as D4, or pass.")
 
 
 class AnalysisRequest(BaseModel):
@@ -107,7 +113,9 @@ class AnalysisRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    profile: str = Field(description="Name of the profile to analyze with.")
+    profile: str = Field(
+        max_length=64, description="Name of the profile to analyze with."
+    )
     board: Board
     rules: Rules
     komi: float
@@ -127,41 +135,60 @@ class AnalysisRequest(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
-    def _check_game(self) -> AnalysisRequest:
-        if abs(self.komi) > _MAX_KOMI or not (self.komi * 2).is_integer():
+    # Each check is a field validator, so its error is reported at that field.
+    @field_validator("komi")
+    @classmethod
+    def _check_komi(cls, komi: float) -> float:
+        if abs(komi) > _MAX_KOMI or not (komi * 2).is_integer():
             raise ValueError("komi must be a multiple of 0.5 between -150 and 150")
+        return komi
 
+    @field_validator("setup")
+    @classmethod
+    def _check_setup(cls, setup: list[Stone], info: ValidationInfo) -> list[Stone]:
+        board = info.data.get("board")
+        if board is None:
+            return setup
         occupied: set[str] = set()
-        for index, stone in enumerate(self.setup):
+        for index, stone in enumerate(setup):
             stone.point = _normalize_point(
-                stone.point, self.board, f"setup[{index}]", allow_pass=False
+                stone.point, board, f"setup[{index}]", allow_pass=False
             )
             if stone.point in occupied:
                 raise ValueError(f"setup[{index}]: {stone.point} is already taken")
             occupied.add(stone.point)
+        return setup
 
-        for index, move in enumerate(self.moves):
+    @field_validator("moves")
+    @classmethod
+    def _check_moves(cls, moves: list[Move], info: ValidationInfo) -> list[Move]:
+        board = info.data.get("board")
+        if board is None:
+            return moves
+        for index, move in enumerate(moves):
             move.point = _normalize_point(
-                move.point, self.board, f"moves[{index}]", allow_pass=True
+                move.point, board, f"moves[{index}]", allow_pass=True
             )
-
-        if (
-            self.initial_player is not None
-            and self.moves
-            and self.moves[0].color != self.initial_player
-        ):
+        initial_player = info.data.get("initial_player")
+        if initial_player is not None and moves and moves[0].color != initial_player:
             raise ValueError(
-                f"initialPlayer is {self.initial_player}, "
-                f"but moves[0] is played by {self.moves[0].color}"
+                f"initialPlayer is {initial_player}, "
+                f"but moves[0] is played by {moves[0].color}"
             )
+        return moves
 
-        if self.turns is not None:
-            for turn in self.turns:
-                if turn < 0 or turn > len(self.moves):
-                    raise ValueError(f"turns: {turn} is outside 0..{len(self.moves)}")
-            self.turns = sorted(set(self.turns))
-        return self
+    @field_validator("turns")
+    @classmethod
+    def _check_turns(
+        cls, turns: list[int] | None, info: ValidationInfo
+    ) -> list[int] | None:
+        moves = info.data.get("moves")
+        if turns is None or moves is None:
+            return turns
+        for turn in turns:
+            if turn < 0 or turn > len(moves):
+                raise ValueError(f"turns: {turn} is outside 0..{len(moves)}")
+        return sorted(set(turns))
 
     def resolved_turns(self) -> list[int]:
         """Return the turns to analyze in ascending order."""
@@ -292,7 +319,7 @@ async def _raw(transport: GTPTransport, command: str) -> ParsedResponse:
     try:
         raw = await transport.send_command(command)
         return parse_response(raw)
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ConnectionError) as exc:
         # The message can hold the engine's stderr, with file paths and other
         # details of the host, so clients get a fixed text and the log the rest.
         logger.warning("GTP engine failed on %r: %s", command, exc)
