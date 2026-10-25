@@ -114,10 +114,12 @@ def _build_profile(name: str, table: Any, base: Path) -> Profile:
     visits = _positive_int(name, "visits", table.get("visits"))
     max_turns = _positive_int(name, "maxTurns", table.get("maxTurns"))
 
-    # The forced overrides change results as much as the file does, so they
-    # are part of the config hash.
+    # The forced overrides and the arguments in the command change results as
+    # much as the file does, so they are part of the config hash. The
+    # executable path is left out because it differs between machines.
     config_hash = hashlib.sha256(config.read_bytes())
     config_hash.update(b"\n" + _overrides(visits).encode("utf-8"))
+    config_hash.update(b"\n" + shlex.join(command[1:]).encode("utf-8"))
 
     return Profile(
         name=name,

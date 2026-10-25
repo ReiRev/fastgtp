@@ -12,6 +12,7 @@ Flags before the KataGo-style arguments change its behavior for a test.
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 import time
 
@@ -38,8 +39,12 @@ def main() -> None:
     parser.add_argument("--analyze-seconds", type=float, default=0.0)
     parser.add_argument("--exit-on-analyze", type=int, default=0)
     parser.add_argument("--stderr-bytes", type=int, default=0)
+    parser.add_argument("--ignore-sigterm", action="store_true")
     parser.add_argument("--log")
     args, engine_args = parser.parse_known_args()
+
+    if args.ignore_sigterm:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
     log = open(args.log, "a", encoding="utf-8") if args.log else None
     if log:
@@ -98,14 +103,19 @@ def main() -> None:
                 sys.exit(3)
             time.sleep(args.analyze_seconds)
             winrate = 0.5 + 0.01 * moves_played + (0.001 if rest[0] == "W" else 0.0)
+            # KataGo prints the moves and rootInfo on one line.
             reply(
                 True,
-                "info move D4 visits 10 winrate 0.123456 order 0 pv D4\n"
-                f"rootInfo visits 10 utility 0.0 winrate {winrate:.6f} scoreLead 0.5\n"
-                "play D4",
+                "info move D4 visits 10 winrate 0.123456 order 0 pv D4 "
+                f"rootInfo visits 10 utility 0.0 winrate {winrate:.6f} scoreLead 0.5",
             )
         else:
             reply(True)
+
+    # Like an engine stuck in a search, it outlives its closed stdin and only
+    # SIGKILL stops it.
+    while args.ignore_sigterm:
+        time.sleep(1)
 
 
 def reply(success: bool, payload: str = "") -> None:

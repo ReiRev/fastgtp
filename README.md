@@ -77,7 +77,9 @@ visits   = 200
 maxTurns = 600
 ```
 
-fastgtp starts KataGo with `-override-config maxVisits=<visits>,reportAnalysisWinratesAs=BLACK`.
+fastgtp starts KataGo with `-override-config maxVisits=<visits>,reportAnalysisWinratesAs=BLACK`. The config hash in `conditions` covers the config file, these overrides, and the arguments in `command`.
+
+fastgtp reads the engine's name and version and hashes the network when it starts. Restart it after replacing an engine or network file in place, or `conditions` reports the old values.
 
 Every job runs in a fresh engine process, so earlier jobs cannot change its result. With `numSearchThreads = 1` and `nnRandomize = false` in the config file, the same job on the same engine build and GPU returns the same numbers, digit for digit. The process exits when the job ends, so the network does not stay on the GPU.
 
@@ -114,11 +116,12 @@ curl http://localhost:8000/v1/analyses/<id>
 #      "turns": [{"turn": 0, "blackWinrate": 0.47}, {"turn": 1, "blackWinrate": 0.46}, ...]}}
 ```
 
-- `turns` in the request picks the positions to analyze. Turn `n` is the position after `n` moves. Without it, every position is analyzed.
-- `initialPlayer` sets the side that plays first when there are no moves. It defaults to White when there are setup stones, and to Black otherwise.
+- `turns` in the request picks the positions to analyze. Turn `n` is the position after `n` moves. Without it, every position is analyzed. Every move is still played, so an illegal move anywhere fails the job.
+- A request holds at most 1000 moves.
+- `initialPlayer` sets the side that plays first when there are no moves. It defaults to White when there are setup stones, and to Black otherwise. When there are moves, it must match the color of the first one.
 - `conditions` records what decided the numbers. Store it with the results.
 - A job is `queued`, `running`, `succeeded`, `failed`, or `canceled`. A failed job has an `error` in RFC 9457 problem details form, for example an illegal move with its index in `field`.
-- `DELETE /v1/analyses/<id>` cancels a job. `GET /v1/profiles` lists the profiles and their conditions, and `GET /v1/health` reports job counts.
+- `DELETE /v1/analyses/<id>` deletes a job, and stops it first if it has not finished. `GET /v1/profiles` lists the profiles and their conditions, and `GET /v1/health` reports job counts.
 - Jobs live in memory. After a restart, a job returns 404, and the client should submit it again. Finished jobs are dropped after the retention period.
 - Errors from `/v1` routes use `application/problem+json`. The session routes keep their existing error format.
 

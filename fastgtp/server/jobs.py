@@ -116,18 +116,20 @@ class JobManager:
         self._purge()
         return self._jobs.get(job_id)
 
-    async def cancel(self, job_id: str) -> Job | None:
-        """Stop a queued or running job. A finished job is left as it is."""
+    async def delete(self, job_id: str) -> bool:
+        """Stop a job that has not finished, and forget the job.
+
+        Returns whether the job existed.
+        """
         job = self.get(job_id)
-        if job is None or job.finished:
-            return job
-        if job.task is not None:
+        if job is None:
+            return False
+        if not job.finished and job.task is not None:
             job.task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await job.task
-        if not job.finished:
-            self._finish(job, "canceled")
-        return job
+        self._forget(job)
+        return True
 
     async def close(self) -> None:
         """Cancel every job that has not finished."""
@@ -170,9 +172,11 @@ class JobManager:
                 except AnalysisFailure as failure:
                     self._finish(job, "failed", error=failure.problem())
                     return
-                except Exception as exc:
+                except Exception:
                     logger.exception("Analysis job %s failed", job.id)
-                    failure = AnalysisFailure(502, "Engine error", str(exc))
+                    failure = AnalysisFailure(
+                        500, "Internal error", "The analysis failed unexpectedly"
+                    )
                     self._finish(job, "failed", error=failure.problem())
                     return
                 self._finish(job, "succeeded")
@@ -198,9 +202,15 @@ class JobManager:
             and now - job.finished_monotonic >= self._retention_seconds
         ]
         for job in expired:
-            del self._jobs[job.id]
-            if job.idempotency_key is not None:
-                self._by_key.pop(job.idempotency_key, None)
+            self._forget(job)
+
+    def _forget(self, job: Job) -> None:
+        self._jobs.pop(job.id, None)
+        if (
+            job.idempotency_key is not None
+            and self._by_key.get(job.idempotency_key) == job.id
+        ):
+            del self._by_key[job.idempotency_key]
 
 
 def _utcnow() -> datetime:

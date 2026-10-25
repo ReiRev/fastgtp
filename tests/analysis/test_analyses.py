@@ -81,9 +81,7 @@ def test_analysis_sends_the_game_as_gtp_commands(make_client, engine_log):
     ]
 
 
-def test_analysis_stops_replaying_after_the_last_requested_turn(
-    make_client, engine_log
-):
+def test_analysis_searches_only_the_requested_turns(make_client, engine_log):
     client = make_client({"test-v1": ["--log", str(engine_log)]})
 
     job = submit(client, {**GAME, "turns": [0]}).json()
@@ -92,9 +90,26 @@ def test_analysis_stops_replaying_after_the_last_requested_turn(
     assert done["result"]["turns"] == [
         {"turn": 0, "blackWinrate": fake_winrate(0, "W")}
     ]
-    assert not any(
-        line.startswith("play") for line in engine_log.read_text().splitlines()
-    )
+    log = engine_log.read_text().splitlines()
+    assert sum(line.startswith("kata-search_analyze") for line in log) == 1
+    assert [line for line in log if line.startswith("play")] == [
+        "play W Q4",
+        "play B pass",
+    ]
+
+
+def test_illegal_move_after_the_last_requested_turn_fails_the_job(make_client):
+    client = make_client()
+    body = {
+        **GAME,
+        "moves": [{"color": "W", "point": "Q4"}, {"color": "B", "point": "D4"}],
+        "turns": [0],
+    }
+
+    done = wait_for_job(client, submit(client, body).json()["id"])
+
+    assert done["status"] == "failed"
+    assert done["error"]["field"] == "moves[1]"
 
 
 def test_rectangular_board_and_initial_player(make_client, engine_log):
@@ -153,14 +168,15 @@ def test_engine_without_the_extensions_is_rejected(make_client):
     assert profiles["test-v1"]["limits"] == {"maxTurns": 10}
 
 
-def test_unknown_profile_is_404(make_client):
+def test_unknown_profile_is_422(make_client):
     client = make_client()
 
     res = submit(client, {**GAME, "profile": "missing"})
 
-    assert res.status_code == 404
+    assert res.status_code == 422
     assert res.headers["content-type"] == "application/problem+json"
     assert res.json()["title"] == "Unknown profile"
+    assert res.json()["field"] == "profile"
 
 
 @pytest.mark.parametrize(
@@ -174,6 +190,8 @@ def test_unknown_profile_is_404(make_client):
         {"setup": [{"color": "B", "point": "D4"}, {"color": "W", "point": "D4"}]},
         {"turns": [3]},
         {"board": {"width": 25, "height": 25}},
+        {"initialPlayer": "B"},
+        {"moves": [{"color": "B", "point": "pass"}] * 1001},
     ],
 )
 def test_invalid_request_is_a_422_problem(make_client, change):
@@ -186,6 +204,7 @@ def test_invalid_request_is_a_422_problem(make_client, change):
     body = res.json()
     assert body["title"] == "Invalid request"
     assert body["errors"]
+    assert all(set(error) == {"loc", "msg", "type"} for error in body["errors"])
 
 
 def test_too_many_turns_is_rejected(make_client):
@@ -219,7 +238,7 @@ def test_full_queue_is_503_with_retry_after(make_client):
     }
 
 
-def test_cancel_stops_a_running_job(make_client):
+def test_delete_stops_a_running_job(make_client):
     client = make_client({"test-v1": ["--analyze-seconds", "30"]})
     job = submit(client).json()
     wait_for_status(client, job["id"], "running")
@@ -229,19 +248,42 @@ def test_cancel_stops_a_running_job(make_client):
 
     assert res.status_code == 204
     assert time.monotonic() - started < 10
-    assert client.get(f"/v1/analyses/{job['id']}").json()["status"] == "canceled"
+    assert client.get(f"/v1/analyses/{job['id']}").status_code == 404
     assert client.get("/v1/health").json()["runningJobs"] == 0
 
 
-def test_cancel_of_a_queued_job(make_client):
+def test_delete_of_a_queued_job(make_client):
     client = make_client({"test-v1": ["--analyze-seconds", "30"]}, max_running=1)
     running = submit(client).json()
     wait_for_status(client, running["id"], "running")
     queued = submit(client).json()
 
     assert client.delete(f"/v1/analyses/{queued['id']}").status_code == 204
-    assert client.get(f"/v1/analyses/{queued['id']}").json()["status"] == "canceled"
+    assert client.get(f"/v1/analyses/{queued['id']}").status_code == 404
     assert client.get(f"/v1/analyses/{running['id']}").json()["status"] == "running"
+
+
+def test_delete_of_a_finished_job_removes_it(make_client):
+    client = make_client()
+    job = submit(client, **{"Idempotency-Key": "game-1"}).json()
+    wait_for_job(client, job["id"])
+
+    assert client.delete(f"/v1/analyses/{job['id']}").status_code == 204
+    assert client.get(f"/v1/analyses/{job['id']}").status_code == 404
+    again = submit(client, **{"Idempotency-Key": "game-1"}).json()
+    assert again["id"] != job["id"]
+
+
+def test_finished_job_is_dropped_after_retention(make_client):
+    client = make_client(retention_seconds=0.5)
+    job = submit(client).json()
+    wait_for_job(client, job["id"])
+
+    time.sleep(0.6)
+
+    res = client.get(f"/v1/analyses/{job['id']}")
+    assert res.status_code == 404
+    assert res.json()["title"] == "Unknown job"
 
 
 def test_unknown_job_is_404(make_client):
@@ -262,14 +304,15 @@ def test_job_timeout_fails_with_504(make_client):
     assert done["error"]["status"] == 504
 
 
-def test_engine_crash_fails_with_its_stderr(make_client):
+def test_engine_crash_keeps_its_stderr_in_the_server_log(make_client, caplog):
     client = make_client({"test-v1": ["--exit-on-analyze", "2"]})
 
     done = wait_for_job(client, submit(client).json()["id"])
 
     assert done["status"] == "failed"
     assert done["error"]["status"] == 502
-    assert "fake engine crashed on purpose" in done["error"]["detail"]
+    assert "crashed" not in done["error"]["detail"]
+    assert "fake engine crashed on purpose" in caplog.text
     assert done["progress"]["done"] == 1
 
 
@@ -294,7 +337,7 @@ def test_same_idempotency_key_returns_the_same_job(make_client):
     assert other.json()["title"] == "Idempotency key reused"
 
 
-def test_v1_routes_take_precedence_over_gtp_sessions(make_client):
+def test_v1_and_gtp_session_routes_work_together(make_client):
     client = make_client(with_gtp=True)
 
     assert client.get("/v1/health").json()["status"] == "ok"
@@ -313,3 +356,30 @@ def test_gtp_routes_keep_their_validation_format(make_client):
     assert res.headers["content-type"] == "application/json"
     assert "detail" in res.json()
     client.post(f"/{session_id}/quit")
+
+
+@pytest.mark.parametrize(
+    "method, path, status",
+    [
+        ("get", "/v1/nope", 404),
+        ("put", "/v1/analyses", 405),
+        ("post", "/v1/health", 405),
+    ],
+)
+def test_unknown_v1_routes_are_problems(make_client, method, path, status):
+    client = make_client()
+
+    res = client.request(method.upper(), path)
+
+    assert res.status_code == status
+    assert res.headers["content-type"] == "application/problem+json"
+    assert res.json()["status"] == status
+
+
+def test_unknown_gtp_routes_keep_their_format(make_client):
+    client = make_client(with_gtp=True)
+
+    res = client.get("/nope/name")
+
+    assert res.status_code == 404
+    assert res.headers["content-type"] == "application/json"

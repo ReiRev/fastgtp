@@ -4,8 +4,11 @@ import asyncio
 
 import pytest
 
-from fastgtp import ProfileError, create_app, load_profiles
+from fastgtp import ProfileError, SubprocessGTPTransport, create_app, load_profiles
+from fastgtp.server import transport as transport_module
 from fastgtp.server.jobs import JobManager
+
+from .helpers import fake_engine_command
 
 
 def test_create_app_needs_gtp_or_analysis():
@@ -64,6 +67,54 @@ def test_config_hash_covers_the_forced_visits(tmp_path):
     profiles = load_profiles(path)
 
     assert profiles["v100"].config_sha256 != profiles["v200"].config_sha256
+
+
+def test_config_hash_covers_the_command_arguments(tmp_path):
+    (tmp_path / "m.bin").write_bytes(b"m")
+    (tmp_path / "a.cfg").write_text("same file\n")
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        "".join(
+            f'[profiles."{name}"]\ncommand = "{command}"\nmodel = "m.bin"\n'
+            f'config = "a.cfg"\nvisits = 1\nmaxTurns = 1\n'
+            for name, command in (
+                ("plain", "/a/katago gtp"),
+                ("moved", "/b/katago gtp"),
+                ("extra", "/a/katago gtp -override-config x=1"),
+            )
+        )
+    )
+
+    profiles = load_profiles(path)
+
+    assert profiles["plain"].config_sha256 == profiles["moved"].config_sha256
+    assert profiles["plain"].config_sha256 != profiles["extra"].config_sha256
+
+
+def test_engine_that_ignores_sigterm_is_killed_despite_repeated_cancels(
+    monkeypatch,
+):
+    monkeypatch.setattr(transport_module, "_TERMINATE_GRACE_SECONDS", 0.5)
+
+    async def scenario():
+        transport = SubprocessGTPTransport(fake_engine_command("--ignore-sigterm"))
+        await transport.open()
+        process = transport._process
+        # Let the engine install its SIGTERM handler before it is closed.
+        await transport.send_command("name")
+
+        closing = asyncio.create_task(transport.aclose())
+        await asyncio.sleep(0.1)
+        closing.cancel()
+        await asyncio.sleep(0.1)
+        closing.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+
+        await asyncio.wait_for(process.wait(), 5)
+        assert process.returncode == -9
+
+    asyncio.run(scenario())
 
 
 def test_finished_jobs_are_dropped_after_retention():

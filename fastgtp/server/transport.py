@@ -57,25 +57,14 @@ class SubprocessGTPTransport(GTPTransport):
         async with self._lock:
             if self._process is None:
                 return
-            if self._process.stdin is not None:
-                self._process.stdin.close()
-            if self._process.returncode is None:
-                with contextlib.suppress(ProcessLookupError):
-                    self._process.terminate()
-                try:
-                    await asyncio.wait_for(
-                        self._process.wait(), _TERMINATE_GRACE_SECONDS
-                    )
-                except asyncio.TimeoutError:
-                    with contextlib.suppress(ProcessLookupError):
-                        self._process.kill()
-                    await self._process.wait()
-            if self._stderr_task is not None:
-                self._stderr_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await self._stderr_task
-                self._stderr_task = None
-            self._process = None
+            process, self._process = self._process, None
+            stderr_task, self._stderr_task = self._stderr_task, None
+            shutdown = asyncio.ensure_future(_shut_down(process, stderr_task))
+            _shutdowns.add(shutdown)
+            shutdown.add_done_callback(_shutdowns.discard)
+            # A second cancellation of the caller must not skip the SIGKILL
+            # fallback, or an engine that ignores SIGTERM keeps running.
+            await asyncio.shield(shutdown)
 
     async def _ensure_process(self) -> Process:
         if self._process is None or self._process.returncode is not None:
@@ -142,6 +131,29 @@ class SubprocessGTPTransport(GTPTransport):
     def copy(self) -> SubprocessGTPTransport:
         """Create a fresh transport with the same command."""
         return SubprocessGTPTransport(self._command)
+
+
+# Shutdowns that outlive a cancelled caller. The event loop keeps only weak
+# references to tasks, so they are held here until they finish.
+_shutdowns: set[asyncio.Future[None]] = set()
+
+
+async def _shut_down(process: Process, stderr_task: asyncio.Task[None] | None) -> None:
+    if process.stdin is not None:
+        process.stdin.close()
+    if process.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), _TERMINATE_GRACE_SECONDS)
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+    if stderr_task is not None:
+        stderr_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stderr_task
 
 
 class GTPTransportManager:

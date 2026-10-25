@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from http import HTTPStatus
 from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, Header, Request, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .analysis import (
     AnalysisFailure,
@@ -31,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 PREFIX = "/v1"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
+_PROBE_TIMEOUT_SECONDS = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +75,18 @@ class AnalysisService:
             transport = SubprocessGTPTransport(profile.engine_command())
             try:
                 await transport.open()
-                engine = await probe_engine(transport)
+                engine = await asyncio.wait_for(
+                    probe_engine(transport), _PROBE_TIMEOUT_SECONDS
+                )
             except AnalysisFailure as failure:
                 raise RuntimeError(
                     f"Profile {profile.name!r}: engine did not start: {failure.detail}"
                 ) from failure
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError(
+                    f"Profile {profile.name!r}: engine did not answer within "
+                    f"{_PROBE_TIMEOUT_SECONDS:g} seconds"
+                ) from exc
             finally:
                 await transport.aclose()
             if engine.missing_commands:
@@ -189,23 +203,40 @@ def problem_response(
 
 
 def install_problem_handler(app: FastAPI) -> None:
-    """Report invalid ``/v1`` requests as problem details.
+    """Report errors on ``/v1`` paths as problem details.
 
-    Other routes keep FastAPI's default validation response, so existing
-    clients see no change.
+    Other routes keep FastAPI's default error responses, so existing clients
+    see no change.
     """
 
-    async def handler(request: Request, exc: RequestValidationError):
+    async def validation_handler(request: Request, exc: RequestValidationError):
         if not _is_v1(request.url.path):
             return await request_validation_exception_handler(request, exc)
+        # FastAPI's errors also echo the invalid input, which can be most of a
+        # large body, so only the location and the message are returned.
+        errors = [
+            {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+            for error in exc.errors()
+        ]
         return problem_response(
             422,
             "Invalid request",
             "The request body or parameters are not valid.",
-            errors=exc.errors(),
+            errors=errors,
         )
 
-    app.add_exception_handler(RequestValidationError, handler)
+    async def http_handler(request: Request, exc: StarletteHTTPException):
+        if not _is_v1(request.url.path):
+            return await http_exception_handler(request, exc)
+        return problem_response(
+            exc.status_code,
+            HTTPStatus(exc.status_code).phrase,
+            str(exc.detail),
+            headers=exc.headers,
+        )
+
+    app.add_exception_handler(RequestValidationError, validation_handler)
+    app.add_exception_handler(StarletteHTTPException, http_handler)
 
 
 def create_v1_router(service: AnalysisService) -> APIRouter:
@@ -246,7 +277,10 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         profile = service.profiles.get(request.profile)
         if profile is None:
             return problem_response(
-                404, "Unknown profile", f"No profile named {request.profile!r}"
+                422,
+                "Unknown profile",
+                f"No profile named {request.profile!r}",
+                field="profile",
             )
         missing = service.engines[profile.name].missing_commands
         if missing:
@@ -304,10 +338,9 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         return job_response(job, response)
 
     @router.delete("/analyses/{job_id}", status_code=204)
-    async def cancel_analysis(job_id: str):  # type: ignore[unused-coroutine]
-        """Cancel a job that has not finished."""
-        job = await service.jobs.cancel(job_id)
-        if job is None:
+    async def delete_analysis(job_id: str):  # type: ignore[unused-coroutine]
+        """Delete a job. A job that has not finished is stopped first."""
+        if not await service.jobs.delete(job_id):
             return unknown_job(job_id)
         return Response(status_code=204)
 

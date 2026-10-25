@@ -9,6 +9,7 @@ engine that lacks one is detected before any job runs.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Sequence
@@ -17,6 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .gtp import ParsedResponse, build_command, parse_response
 from .transport import GTPTransport
+
+logger = logging.getLogger(__name__)
 
 Color = Literal["B", "W"]
 Rules = Literal[
@@ -47,6 +50,10 @@ _COLUMNS = "ABCDEFGHJKLMNOPQRST"
 _POINT_PATTERN = re.compile(r"^([A-HJ-T])([1-9][0-9]?)$")
 _ROOT_WINRATE_PATTERN = re.compile(r"\brootInfo\b.*?\bwinrate\s+(\S+)")
 _MAX_KOMI = 150.0
+# Far above any real game. The cap keeps one request from tying up the
+# server while its body is validated.
+MAX_MOVES = 1000
+_MAX_SETUP_STONES = 19 * 19
 
 
 class AnalysisFailure(Exception):
@@ -110,15 +117,16 @@ class AnalysisRequest(BaseModel):
     board: Board
     rules: Rules
     komi: float
-    setup: list[Stone] = Field(default_factory=list)
+    setup: list[Stone] = Field(default_factory=list, max_length=_MAX_SETUP_STONES)
     initial_player: Color | None = Field(
         default=None,
         alias="initialPlayer",
         description="Side to play first. Defaults to W with setup stones, else B.",
     )
-    moves: list[Move]
+    moves: list[Move] = Field(max_length=MAX_MOVES)
     turns: list[int] | None = Field(
         default=None,
+        max_length=MAX_MOVES + 1,
         description=(
             "Positions to analyze. Turn n is the position after n moves. "
             "Defaults to every position."
@@ -142,6 +150,16 @@ class AnalysisRequest(BaseModel):
         for index, move in enumerate(self.moves):
             move.point = _normalize_point(
                 move.point, self.board, f"moves[{index}]", allow_pass=True
+            )
+
+        if (
+            self.initial_player is not None
+            and self.moves
+            and self.moves[0].color != self.initial_player
+        ):
+            raise ValueError(
+                f"initialPlayer is {self.initial_player}, "
+                f"but moves[0] is played by {self.moves[0].color}"
             )
 
         if self.turns is not None:
@@ -199,7 +217,11 @@ async def analyze_winrates(
     request: AnalysisRequest,
     on_progress: Callable[[int], None],
 ) -> list[dict[str, Any]]:
-    """Replay the game and return Black's win rate at each requested turn."""
+    """Replay the game and return Black's win rate at each requested turn.
+
+    Every move is played, also after the last requested turn, so an illegal
+    move anywhere in the record fails the job.
+    """
     board = request.board
     if board.width == board.height:
         await _send(transport, "boardsize", [str(board.width)])
@@ -223,10 +245,8 @@ async def analyze_winrates(
             winrate = await _search_winrate(transport, request.player_at(turn))
             results.append({"turn": turn, "blackWinrate": winrate})
             on_progress(len(results))
-        if turn == len(request.moves) or len(results) == len(wanted):
-            break
-        move = request.moves[turn]
-        await _play(transport, turn, move)
+        if turn < len(request.moves):
+            await _play(transport, turn, request.moves[turn])
     return results
 
 
@@ -280,7 +300,14 @@ async def _raw(transport: GTPTransport, command: str) -> ParsedResponse:
         raw = await transport.send_command(command)
         return parse_response(raw)
     except (RuntimeError, ValueError) as exc:
-        raise AnalysisFailure(502, "Engine error", str(exc)) from exc
+        # The message can hold the engine's stderr, with file paths and other
+        # details of the host, so clients get a fixed text and the log the rest.
+        logger.warning("GTP engine failed on %r: %s", command, exc)
+        raise AnalysisFailure(
+            502,
+            "Engine error",
+            "The engine stopped or sent a response that could not be read",
+        ) from exc
 
 
 def _normalize_point(value: str, board: Board, where: str, *, allow_pass: bool) -> str:

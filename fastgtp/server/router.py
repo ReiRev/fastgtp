@@ -423,8 +423,6 @@ def create_app(
 
     if analysis is not None:
         install_problem_handler(app)
-        # "/v1/..." also matches the "/{session_id}/..." routes, so the /v1
-        # routes are added first to take precedence.
         app.include_router(create_v1_router(analysis))
 
     if transport_manager is not None:
