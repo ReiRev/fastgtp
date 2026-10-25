@@ -60,14 +60,21 @@ manager = (
 
 analysis = None
 if profiles_path is not None:
+    defaults = JobSettings()
     analysis = AnalysisService(
         load_profiles(profiles_path),
         JobSettings(
-            max_running=_positive_int("FASTGTP_MAX_RUNNING_JOBS", 2),
-            max_queued=_positive_int("FASTGTP_MAX_QUEUED_JOBS", 100),
-            timeout_seconds=_positive_int("FASTGTP_JOB_TIMEOUT_SECONDS", 1800),
-            retention_seconds=_positive_int("FASTGTP_JOB_RETENTION_SECONDS", 3600),
-            retry_after_seconds=_positive_int("FASTGTP_RETRY_AFTER_SECONDS", 5),
+            max_running=_positive_int("FASTGTP_MAX_RUNNING_JOBS", defaults.max_running),
+            max_queued=_positive_int("FASTGTP_MAX_QUEUED_JOBS", defaults.max_queued),
+            timeout_seconds=_positive_int(
+                "FASTGTP_JOB_TIMEOUT_SECONDS", int(defaults.timeout_seconds)
+            ),
+            retention_seconds=_positive_int(
+                "FASTGTP_JOB_RETENTION_SECONDS", int(defaults.retention_seconds)
+            ),
+            retry_after_seconds=_positive_int(
+                "FASTGTP_RETRY_AFTER_SECONDS", defaults.retry_after_seconds
+            ),
         ),
     )
 

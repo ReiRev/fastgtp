@@ -98,7 +98,7 @@ class SubprocessGTPTransport(GTPTransport):
     async def _drain_stderr(self, process: Process) -> None:
         if process.stderr is None:
             return
-        # Fixed-size reads, because readline() stops at a line over 64 KiB.
+        # Fixed-size reads keep memory bounded however long a line is.
         while chunk := await process.stderr.read(_STDERR_CHUNK_BYTES):
             self._stderr_tail += chunk
             del self._stderr_tail[:-_STDERR_TAIL_BYTES]
