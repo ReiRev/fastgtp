@@ -46,6 +46,7 @@ def main() -> None:
     parser.add_argument("--no-root-info", action="store_true")
     parser.add_argument("--hang-on")
     parser.add_argument("--reject-setup", action="store_true")
+    parser.add_argument("--info-bytes", type=int, default=0)
     parser.add_argument("--log")
     args, engine_args = parser.parse_known_args()
 
@@ -128,7 +129,8 @@ def main() -> None:
             reply(
                 True,
                 "info move D4 visits 10 winrate 0.123456 order 0 pv D4 "
-                f"rootInfo visits 10 utility 0.0 winrate {winrate:.6f} scoreLead 0.5",
+                + "info move C3 pv C3 " * (args.info_bytes // 19)
+                + f"rootInfo visits 10 utility 0.0 winrate {winrate:.6f} scoreLead 0.5",
             )
         else:
             reply(True)

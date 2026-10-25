@@ -111,7 +111,7 @@ class Move(BaseModel):
 class AnalysisRequest(BaseModel):
     """A game to analyze. Every position in it is analyzed."""
 
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid")
 
     profile: str = Field(
         max_length=64, description="Name of the profile to analyze with."
@@ -262,6 +262,7 @@ async def _search_winrate(transport: GTPTransport, color: Color) -> float:
     )
     matches = _ROOT_WINRATE_PATTERN.findall(payload)
     if not matches:
+        logger.warning("kata-search_analyze output had no rootInfo: %.2000s", payload)
         raise AnalysisFailure(
             ENGINE_ERROR, "kata-search_analyze returned no rootInfo winrate"
         )

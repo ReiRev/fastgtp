@@ -100,6 +100,12 @@ class AnalysisService:
                     f"Profile {profile.name!r}: engine did not answer within "
                     f"{_PROBE_TIMEOUT_SECONDS:g} seconds"
                 ) from exc
+            # After the timeout, because TimeoutError is an OSError on
+            # Python 3.11 and later.
+            except OSError as exc:
+                raise RuntimeError(
+                    f"Profile {profile.name!r}: engine did not start: {exc}"
+                ) from exc
             finally:
                 await transport.aclose()
             if engine.missing_commands:
@@ -418,7 +424,10 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         "/analyses/{job_id}",
         response_model=JobResponse,
         response_model_exclude_none=True,
-        responses=_problems(404, 422),
+        responses={
+            200: {"headers": {"Retry-After": _RETRY_AFTER_HEADER}},
+            **_problems(404, 422),
+        },
     )
     async def get_analysis(job_id: str, response: Response):  # type: ignore[unused-coroutine]
         """Return the state of a job, with its result once it has finished."""

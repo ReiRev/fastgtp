@@ -367,11 +367,12 @@ def test_timeout_wins_over_an_engine_that_closed_its_output(make_client):
     assert done["error"]["status"] == 504
 
 
-def test_search_without_root_info_fails_the_job(make_client):
+def test_search_without_root_info_fails_the_job(make_client, caplog):
     client = make_client({"test-v1": ["--no-root-info"]})
 
     done = wait_for_job(client, submit(client).json()["id"])
 
+    assert "had no rootInfo: info move D4" in caplog.text
     assert done["status"] == "failed"
     assert done["error"]["detail"] == "kata-search_analyze returned no rootInfo winrate"
 
@@ -513,3 +514,19 @@ def test_unknown_job_does_not_echo_its_id(make_client):
 
     assert res.status_code == 404
     assert len(res.content) < 500
+
+
+def test_analysis_line_longer_than_64_kib_is_read(make_client):
+    client = make_client({"test-v1": ["--info-bytes", "200000"]})
+
+    done = wait_for_job(client, submit(client).json()["id"])
+
+    assert done["status"] == "succeeded"
+
+
+def test_snake_case_field_names_are_rejected(make_client):
+    client = make_client()
+
+    res = submit(client, {**GAME, "initial_player": "W"})
+
+    assert res.status_code == 422

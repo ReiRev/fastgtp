@@ -367,3 +367,17 @@ def test_openapi_documents_problem_responses(write_profiles):
 
     for status in ("422", "501", "503"):
         assert list(responses[status]["content"]) == ["application/problem+json"]
+
+
+def test_startup_names_the_profile_whose_engine_is_missing(tmp_path):
+    (tmp_path / "m.bin").write_bytes(b"m")
+    (tmp_path / "a.cfg").write_text("")
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        '[profiles."gone"]\ncommand = "/nonexistent/katago gtp"\n'
+        'model = "m.bin"\nconfig = "a.cfg"\nvisits = 1\nmaxTurns = 1\n'
+    )
+    service = AnalysisService(load_profiles(path))
+
+    with pytest.raises(RuntimeError, match="'gone': engine did not start"):
+        asyncio.run(service.start())

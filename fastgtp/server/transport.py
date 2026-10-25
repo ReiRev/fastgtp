@@ -12,6 +12,9 @@ from typing import Protocol, Sequence
 _STDERR_CHUNK_BYTES = 4096
 _STDERR_TAIL_BYTES = 8192
 _TERMINATE_GRACE_SECONDS = 5.0
+# KataGo prints every candidate move of an analysis on one line, which can
+# pass asyncio's default line limit of 64 KiB.
+_STDOUT_LINE_LIMIT_BYTES = 16 * 1024 * 1024
 
 
 class GTPTransport(Protocol):
@@ -82,6 +85,7 @@ class SubprocessGTPTransport(GTPTransport):
                 stdin=PIPE,
                 stdout=PIPE,
                 stderr=PIPE,
+                limit=_STDOUT_LINE_LIMIT_BYTES,
             )
             if self._stderr_task is not None:
                 self._stderr_task.cancel()

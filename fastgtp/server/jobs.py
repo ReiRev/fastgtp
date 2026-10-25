@@ -177,6 +177,8 @@ class JobManager:
                 self._finish(job, "failed", error=failure.problem())
                 return
             except AnalysisFailure as failure:
+                if failure.kind.status >= 500:
+                    logger.warning("Analysis job %s failed: %s", job.id, failure.detail)
                 self._finish(job, "failed", error=failure.problem())
                 return
             except Exception:
