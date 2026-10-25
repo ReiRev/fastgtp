@@ -17,6 +17,7 @@ from typing import Any, Callable, Literal, Sequence
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .gtp import ParsedResponse, build_command, parse_response
+from .problems import ENGINE_ERROR, ILLEGAL_MOVE, ProblemType
 from .transport import GTPTransport
 
 logger = logging.getLogger(__name__)
@@ -60,25 +61,18 @@ class AnalysisFailure(Exception):
     """An analysis error that is reported to the client as a problem."""
 
     def __init__(
-        self, status: int, title: str, detail: str, field: str | None = None
+        self, kind: ProblemType, detail: str, field: str | None = None
     ) -> None:
         super().__init__(detail)
-        self.status = status
-        self.title = title
+        self.kind = kind
         self.detail = detail
         self.field = field
 
     def problem(self) -> dict[str, Any]:
         """Return the failure as an RFC 9457 problem details object."""
-        problem: dict[str, Any] = {
-            "type": "about:blank",
-            "title": self.title,
-            "status": self.status,
-            "detail": self.detail,
-        }
-        if self.field is not None:
-            problem["field"] = self.field
-        return problem
+        if self.field is None:
+            return self.kind.body(self.detail)
+        return self.kind.body(self.detail, field=self.field)
 
 
 class Board(BaseModel):
@@ -260,16 +254,16 @@ async def _search_winrate(transport: GTPTransport, color: Color) -> float:
     matches = _ROOT_WINRATE_PATTERN.findall(payload)
     if not matches:
         raise AnalysisFailure(
-            502, "Engine error", "kata-search_analyze returned no rootInfo winrate"
+            ENGINE_ERROR, "kata-search_analyze returned no rootInfo winrate"
         )
     try:
         winrate = float(matches[-1])
     except ValueError as exc:
         raise AnalysisFailure(
-            502, "Engine error", f"Unreadable winrate {matches[-1]!r}"
+            ENGINE_ERROR, f"Unreadable winrate {matches[-1]!r}"
         ) from exc
     if not 0.0 <= winrate <= 1.0:
-        raise AnalysisFailure(502, "Engine error", f"Winrate {winrate} is out of range")
+        raise AnalysisFailure(ENGINE_ERROR, f"Winrate {winrate} is out of range")
     return winrate
 
 
@@ -277,8 +271,7 @@ async def _play(transport: GTPTransport, index: int, move: Move) -> None:
     raw = await _raw(transport, build_command("play", [move.color, move.point]))
     if not raw.success:
         raise AnalysisFailure(
-            422,
-            "Illegal move",
+            ILLEGAL_MOVE,
             f"moves[{index}]: {move.color} {move.point} is illegal",
             field=f"moves[{index}]",
         )
@@ -290,7 +283,7 @@ async def _send(
     response = await _raw(transport, build_command(name, arguments))
     if not response.success:
         raise AnalysisFailure(
-            502, "Engine error", f"{name} failed: {response.error or 'unknown error'}"
+            ENGINE_ERROR, f"{name} failed: {response.error or 'unknown error'}"
         )
     return response.payload
 
@@ -304,8 +297,7 @@ async def _raw(transport: GTPTransport, command: str) -> ParsedResponse:
         # details of the host, so clients get a fixed text and the log the rest.
         logger.warning("GTP engine failed on %r: %s", command, exc)
         raise AnalysisFailure(
-            502,
-            "Engine error",
+            ENGINE_ERROR,
             "The engine stopped or sent a response that could not be read",
         ) from exc
 

@@ -146,7 +146,7 @@ def test_illegal_move_fails_the_job_with_its_index(make_client):
     assert done["status"] == "failed"
     assert "result" not in done
     assert done["error"] == {
-        "type": "about:blank",
+        "type": "https://github.com/ReiRev/fastgtp/blob/main/docs/problems.md#illegal-move",
         "title": "Illegal move",
         "status": 422,
         "detail": "moves[1]: B D4 is illegal",
@@ -373,6 +373,7 @@ def test_unknown_v1_routes_are_problems(make_client, method, path, status):
 
     assert res.status_code == status
     assert res.headers["content-type"] == "application/problem+json"
+    assert res.json()["type"] == "about:blank"
     assert res.json()["status"] == status
 
 

@@ -123,7 +123,7 @@ curl http://localhost:8000/v1/analyses/<id>
 - A job is `queued`, `running`, `succeeded`, `failed`, or `canceled`. A failed job has an `error` in RFC 9457 problem details form, for example an illegal move with its index in `field`.
 - `DELETE /v1/analyses/<id>` deletes a job, and stops it first if it has not finished. `GET /v1/profiles` lists the profiles and their conditions, and `GET /v1/health` reports job counts.
 - Jobs live in memory. After a restart, a job returns 404, and the client should submit it again. Finished jobs are dropped after the retention period.
-- Errors from `/v1` routes use `application/problem+json`. The session routes keep their existing error format.
+- Errors from `/v1` routes use `application/problem+json`, and their `type` names the kind of error. [docs/problems.md](docs/problems.md) lists the kinds. The session routes keep their existing error format.
 
 ## Still Cooking – Contributions Welcome!
 

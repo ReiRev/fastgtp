@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Literal
 
 from .analysis import AnalysisFailure
+from .problems import ANALYSIS_TIMED_OUT, INTERNAL_ERROR
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +164,7 @@ class JobManager:
                     )
                 except asyncio.TimeoutError:
                     failure = AnalysisFailure(
-                        504,
-                        "Analysis timed out",
+                        ANALYSIS_TIMED_OUT,
                         f"The job did not finish within {self._timeout_seconds:g} seconds",
                     )
                     self._finish(job, "failed", error=failure.problem())
@@ -175,7 +175,7 @@ class JobManager:
                 except Exception:
                     logger.exception("Analysis job %s failed", job.id)
                     failure = AnalysisFailure(
-                        500, "Internal error", "The analysis failed unexpectedly"
+                        INTERNAL_ERROR, "The analysis failed unexpectedly"
                     )
                     self._finish(job, "failed", error=failure.problem())
                     return

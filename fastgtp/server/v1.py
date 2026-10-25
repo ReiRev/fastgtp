@@ -30,6 +30,16 @@ from .analysis import (
     probe_engine,
 )
 from .jobs import IdempotencyConflict, Job, JobManager, JobStatus, QueueFull
+from .problems import (
+    ANALYSIS_NOT_SUPPORTED,
+    IDEMPOTENCY_KEY_REUSED,
+    INVALID_REQUEST,
+    QUEUE_FULL,
+    TOO_MANY_TURNS,
+    UNKNOWN_JOB,
+    UNKNOWN_PROFILE,
+    ProblemType,
+)
 from .profiles import Profile
 from .transport import SubprocessGTPTransport
 
@@ -179,24 +189,16 @@ class HealthResponse(_CamelModel):
 
 
 def problem_response(
-    status: int,
-    title: str,
+    kind: ProblemType,
     detail: str,
     *,
     headers: dict[str, str] | None = None,
     **extra: Any,
 ) -> JSONResponse:
     """Build an RFC 9457 problem details response."""
-    body: dict[str, Any] = {
-        "type": "about:blank",
-        "title": title,
-        "status": status,
-        "detail": detail,
-        **extra,
-    }
     return JSONResponse(
-        jsonable_encoder(body),
-        status_code=status,
+        jsonable_encoder(kind.body(detail, **extra)),
+        status_code=kind.status,
         media_type=PROBLEM_MEDIA_TYPE,
         headers=headers,
     )
@@ -219,8 +221,7 @@ def install_problem_handler(app: FastAPI) -> None:
             for error in exc.errors()
         ]
         return problem_response(
-            422,
-            "Invalid request",
+            INVALID_REQUEST,
             "The request body or parameters are not valid.",
             errors=errors,
         )
@@ -228,9 +229,9 @@ def install_problem_handler(app: FastAPI) -> None:
     async def http_handler(request: Request, exc: StarletteHTTPException):
         if not _is_v1(request.url.path):
             return await http_exception_handler(request, exc)
+        plain = ProblemType(exc.status_code, HTTPStatus(exc.status_code).phrase)
         return problem_response(
-            exc.status_code,
-            HTTPStatus(exc.status_code).phrase,
+            plain,
             str(exc.detail),
             headers=exc.headers,
         )
@@ -260,7 +261,7 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         )
 
     def unknown_job(job_id: str) -> JSONResponse:
-        return problem_response(404, "Unknown job", f"No job with id {job_id}")
+        return problem_response(UNKNOWN_JOB, f"No job with id {job_id}")
 
     @router.post(
         "/analyses",
@@ -277,23 +278,20 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
         profile = service.profiles.get(request.profile)
         if profile is None:
             return problem_response(
-                422,
-                "Unknown profile",
+                UNKNOWN_PROFILE,
                 f"No profile named {request.profile!r}",
                 field="profile",
             )
         missing = service.engines[profile.name].missing_commands
         if missing:
             return problem_response(
-                501,
-                "Analysis not supported",
+                ANALYSIS_NOT_SUPPORTED,
                 f"The engine of profile {profile.name!r} lacks {sorted(missing)}",
             )
         turns = request.resolved_turns()
         if len(turns) > profile.max_turns:
             return problem_response(
-                422,
-                "Too many turns",
+                TOO_MANY_TURNS,
                 f"Profile {profile.name!r} analyzes at most {profile.max_turns} turns per job",
                 field="turns",
             )
@@ -310,15 +308,13 @@ def create_v1_router(service: AnalysisService) -> APIRouter:
             )
         except QueueFull:
             return problem_response(
-                503,
-                "Queue full",
+                QUEUE_FULL,
                 "Too many jobs are waiting. Try again later.",
                 headers={"Retry-After": retry_after},
             )
         except IdempotencyConflict:
             return problem_response(
-                422,
-                "Idempotency key reused",
+                IDEMPOTENCY_KEY_REUSED,
                 "This Idempotency-Key was already used for a different request.",
             )
 
