@@ -181,3 +181,16 @@ def test_unreadable_komi(client, replies, session_id):
     replies["get_komi"] = "= not a number\n\n"
     res = client.get(f"/sessions/{session_id}/board")
     assert_problem(res, 500, PROBLEMS + "engine-error")
+
+
+def test_resignation_is_upper_case(client, replies, session_id):
+    replies["genmove"] = "= resign\n\n"
+    res = client.post(f"/sessions/{session_id}/moves", json={"color": "BLACK"})
+    assert res.status_code == 201
+    assert res.json() == {"color": "BLACK", "vertex": "RESIGN"}
+
+
+def test_unreadable_generated_move(client, replies, session_id):
+    replies["genmove"] = "= somewhere\n\n"
+    res = client.post(f"/sessions/{session_id}/moves", json={"color": "BLACK"})
+    assert_problem(res, 500, PROBLEMS + "engine-error")
