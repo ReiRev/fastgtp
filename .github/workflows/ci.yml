@@ -5,19 +5,22 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install GNU Go
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gnugo
-          # apt puts gnugo in /usr/games, which is not on the runner's PATH.
+          # apt puts gnugo in /usr/games; make sure it is on PATH.
           echo /usr/games >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
@@ -30,8 +33,8 @@ jobs:
   format:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       # Pinned so a new black release does not fail pull requests that did not change.
