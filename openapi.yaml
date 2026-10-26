@@ -1,0 +1,406 @@
+openapi: 3.1.0
+info:
+  title: fastgtp
+  version: 0.1.0
+  description: |
+    fastgtp runs Go Text Protocol (GTP) engines and exposes them over HTTP.
+
+    A session is one engine process. Create a session, set up the board,
+    then play or generate moves. Delete the session when you are done, so
+    the engine process stops.
+
+    Requests to one session run one at a time, in the order they arrive.
+  contact:
+    name: fastgtp
+    url: https://github.com/ReiRev/fastgtp
+  license:
+    name: PolyForm Noncommercial License 1.0.0
+    url: https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+paths:
+  /sessions:
+    post:
+      operationId: createSession
+      summary: Start an engine
+      description: Starts a new engine process with an empty board.
+      responses:
+        "201":
+          description: The session was created.
+          headers:
+            Location:
+              description: The path of the new session, for example `/sessions/3f2a9c`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        "503":
+          description: |
+            fastgtp already runs as many sessions as it allows. Delete a
+            session or try again later. The problem `type` is
+            `.../problems.md#too-many-sessions`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+                format: int32
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: getSession
+      summary: Read a session
+      description: Returns the session and what its engine reports about itself.
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteSession
+      summary: Stop an engine
+      description: Stops the engine process and removes the session.
+      responses:
+        "204":
+          description: The session was removed.
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}/board:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: getBoard
+      summary: Read the board
+      responses:
+        "200":
+          description: The current board.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: replaceBoard
+      summary: Replace the board
+      description: |
+        Replaces the whole board. Send either an empty board (`size` and
+        `komi`) or a position from SGF (`sgf`). The moves played so far are
+        dropped.
+
+        If this call fails, the board may already have changed. Replace it
+        again before you go on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoardInput"
+      responses:
+        "200":
+          description: The new board.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}/moves:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: createMove
+      summary: Play or generate a move
+      description: |
+        With `vertex`, plays that move (GTP `play`). Without `vertex`, the
+        engine chooses and plays a move (GTP `genmove`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveInput"
+      responses:
+        "201":
+          description: The move was played.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Move"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "409":
+          description: |
+            The move is not legal in the current position. The problem
+            `type` is `.../problems.md#illegal-move`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}/moves/last:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    delete:
+      operationId: deleteLastMove
+      summary: Take back the last move
+      description: Takes back the last move (GTP `undo`).
+      responses:
+        "204":
+          description: The last move was taken back.
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "409":
+          description: |
+            There is no move to take back. The problem `type` is
+            `.../problems.md#no-move-to-undo`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+
+components:
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      description: The id from `POST /sessions`.
+      schema:
+        type: string
+
+  schemas:
+    Session:
+      type: object
+      required: [session_id, engine]
+      properties:
+        session_id:
+          type: string
+          description: An opaque id. Do not parse it.
+          example: 3f2a9c0d8e7b4a6c9d1e2f3a4b5c6d7e
+        engine:
+          $ref: "#/components/schemas/Engine"
+
+    Engine:
+      type: object
+      description: What the engine reports about itself.
+      required: [name, version, protocol_version, commands]
+      properties:
+        name:
+          type: string
+          description: GTP `name`.
+          example: GNU Go
+        version:
+          type: string
+          description: GTP `version`.
+          example: "3.8"
+        protocol_version:
+          type: string
+          description: GTP `protocol_version`.
+          example: "2"
+        commands:
+          type: array
+          description: GTP `list_commands`. Shows which GTP commands the engine has.
+          items:
+            type: string
+          example: [play, genmove, undo]
+
+    Color:
+      type: string
+      enum: [BLACK, WHITE]
+
+    Board:
+      type: object
+      required: [size, komi, sgf]
+      properties:
+        size:
+          type: integer
+          format: int32
+          description: The number of lines on each side.
+          example: 19
+        komi:
+          type: number
+          format: double
+          example: 6.5
+        sgf:
+          type: string
+          description: The current position as SGF, as the engine writes it (GTP `printsgf`).
+          example: "(;GM[1]SZ[19]KM[6.5]AB[pd]AW[dp])"
+
+    BoardInput:
+      oneOf:
+        - $ref: "#/components/schemas/EmptyBoardInput"
+        - $ref: "#/components/schemas/SgfBoardInput"
+
+    EmptyBoardInput:
+      type: object
+      description: An empty board (GTP `boardsize`, `clear_board` and `komi`).
+      required: [size, komi]
+      additionalProperties: false
+      properties:
+        size:
+          type: integer
+          format: int32
+          minimum: 2
+          maximum: 25
+          description: |
+            The number of lines on each side. The engine may reject some
+            sizes, which answers `400`.
+          example: 19
+        komi:
+          type: number
+          format: double
+          example: 6.5
+
+    SgfBoardInput:
+      type: object
+      description: A position from an SGF game record (GTP `loadsgf`).
+      required: [sgf]
+      additionalProperties: false
+      properties:
+        sgf:
+          type: string
+          description: |
+            The SGF game record. If the engine rejects it, the answer is
+            `400`. Some engines stop on SGF they cannot parse, which answers
+            `500`. The session stays, and fastgtp starts its engine again
+            with an empty board on the next call.
+          example: "(;GM[1]SZ[19]KM[6.5];B[pd];W[dp])"
+        move_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            Load only the first this many moves of the game. `0` gives the
+            setup position. Without it, the whole game is loaded.
+          example: 30
+
+    MoveInput:
+      type: object
+      required: [color]
+      additionalProperties: false
+      properties:
+        color:
+          $ref: "#/components/schemas/Color"
+        vertex:
+          type: string
+          description: |
+            The point to play, as in GTP: a column letter (no `I`) and a row
+            number, or `PASS`. Leave it out to let the engine choose.
+          pattern: "^([A-HJ-Z][1-9][0-9]?|PASS)$"
+          example: D4
+
+    Move:
+      type: object
+      required: [color, vertex]
+      properties:
+        color:
+          $ref: "#/components/schemas/Color"
+        vertex:
+          type: string
+          description: |
+            The point played, or `PASS`. A generated move can also be
+            `RESIGN`, which means the engine gives up. A resignation does not
+            change the board and is not a move that `DELETE .../moves/last`
+            takes back.
+          pattern: "^([A-HJ-Z][1-9][0-9]?|PASS|RESIGN)$"
+          example: D4
+
+    Problem:
+      type: object
+      description: |
+        An RFC 9457 problem. `type` points to a section of `docs/problems.md`
+        in this repository.
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://github.com/ReiRev/fastgtp/blob/main/docs/problems.md#illegal-move
+        title:
+          type: string
+          example: Illegal move
+        status:
+          type: integer
+          format: int32
+          example: 409
+        detail:
+          type: string
+          example: D4 is already occupied.
+        instance:
+          type: string
+          format: uri-reference
+
+  responses:
+    InvalidRequest:
+      description: |
+        The request is not valid, or the engine rejected its values. The
+        problem `type` is `.../problems.md#invalid-request`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    SessionNotFound:
+      description: |
+        There is no session with this id. The problem `type` is
+        `.../problems.md#session-not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    EngineError:
+      description: |
+        The engine failed, did not start, or gave an answer fastgtp could
+        not read. The problem `type` is `.../problems.md#engine-error`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Problem:
+      description: Any other error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"

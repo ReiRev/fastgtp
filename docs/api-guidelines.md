@@ -5,8 +5,9 @@ This page lists the rules we use, the rules we skip, and how we apply them to GT
 Each number links to the rule: `https://opensource.zalando.com/restful-api-guidelines/#<number>`.
 Read the rule itself when this page is not enough.
 
-When `openapi.yaml` is added, CI will check it with [Spectral](https://github.com/stoplightio/spectral)
-and the [Zalando ruleset](https://github.com/baloise-incubator/spectral-ruleset), with the skipped rules below turned off.
+CI checks `openapi.yaml` with [Spectral](https://github.com/stoplightio/spectral)
+and the [Zalando ruleset](https://github.com/baloise-incubator/spectral-ruleset), with the skipped rules below turned off (`.spectral.yaml`).
+Run it locally with `npx @stoplight/spectral-cli@6.15.0 lint openapi.yaml`.
 
 ## Rules we follow
 
@@ -43,7 +44,8 @@ and the [Zalando ruleset](https://github.com/baloise-incubator/spectral-ruleset)
 - [#151](https://opensource.zalando.com/restful-api-guidelines/#151): Every operation lists its success and error responses.
 - [#150](https://opensource.zalando.com/restful-api-guidelines/#150), [#220](https://opensource.zalando.com/restful-api-guidelines/#220): Common status codes, and the most specific one.
 - [#251](https://opensource.zalando.com/restful-api-guidelines/#251): No redirects.
-- When the job queue is full, answer `503` with `Retry-After`. `429` is only for a client that breaks a rate limit ([#153](https://opensource.zalando.com/restful-api-guidelines/#153)), and fastgtp has none.
+- When the job queue or the session limit is full, answer `503` with `Retry-After`. `429` is only for a client that breaks a rate limit ([#153](https://opensource.zalando.com/restful-api-guidelines/#153)), and fastgtp has none.
+- When the engine fails or answers something fastgtp cannot read, answer `500` with the problem type `engine-error`. The `type` tells it apart from a bug in fastgtp, so no special status code is needed.
 - [#180](https://opensource.zalando.com/restful-api-guidelines/#180): Use `Location`, not `Content-Location`.
 
 ### Errors
@@ -68,6 +70,7 @@ and the [Zalando ruleset](https://github.com/baloise-incubator/spectral-ruleset)
 | #114 (media type versioning) | Only needed for a breaking change, and we avoid those. Revisit if one is needed. |
 | #183, #184, #233 (Zalando headers, `X-Flow-ID`) | Zalando-internal. |
 | #215, #219, #223, #224 (API id, audience, host names) | Zalando-internal. |
+| #218, contact email only | The repository is public. `info.contact.url` points to the repository instead. |
 | #185, #186, #188, #190, #191 (deprecation process) | Assume a company with known clients. |
 | #193 (monitoring), #156 (gzip), #157, #158 (partial responses, embedding) | Not needed at this size. |
 | #163 to #166, #217 (hypermedia links, absolute URIs) | Not needed. `Location` may be relative, as RFC 9110 allows. |
