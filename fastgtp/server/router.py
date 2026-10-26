@@ -12,7 +12,7 @@ import os
 import re
 import tempfile
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Sequence
+from typing import Any, AsyncIterator, Literal, Sequence
 
 from fastapi import APIRouter, Depends, FastAPI, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -20,8 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .gtp import ParsedResponse, build_command, parse_response
 from .problems import (
     ENGINE_ERROR,
+    ILLEGAL_MOVE,
     INTERNAL_ERROR,
     INVALID_REQUEST,
+    NO_MOVE_TO_UNDO,
     SESSION_NOT_FOUND,
     TOO_MANY_SESSIONS,
     ProblemError,
@@ -31,6 +33,9 @@ from .transport import GTPTransport, GTPTransportManager, TooManySessionsError
 
 logger = logging.getLogger(__name__)
 
+Color = Literal["BLACK", "WHITE"]
+_GTP_COLORS = {"BLACK": "B", "WHITE": "W"}
+_GENERATED_VERTEX = re.compile(r"^([A-HJ-Z][1-9][0-9]?|PASS|RESIGN)$")
 _SGF_SIZE = re.compile(r"\bSZ\[(\d+)")
 # SGF's default when a record has no SZ property.
 _DEFAULT_SIZE = 19
@@ -96,6 +101,18 @@ class BoardInput(BaseModel):
         elif self.move_count is not None:
             raise ValueError("move_count is only used with sgf")
         return self
+
+
+class MoveInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    color: Color
+    vertex: str | None = Field(default=None, pattern=r"^([A-HJ-Z][1-9][0-9]?|PASS)$")
+
+
+class Move(BaseModel):
+    color: Color
+    vertex: str
 
 
 class FastGtp(APIRouter):
@@ -191,6 +208,53 @@ class FastGtp(APIRouter):
                             field="komi",
                         )
                 return await self._board(transport)
+
+        @self.post("/sessions/{session_id}/moves", status_code=201)
+        async def create_move(  # type: ignore[unused-coroutine]
+            session_id: str,
+            request: MoveInput,
+            manager: GTPTransportManager = Depends(get_transport_manager),
+        ) -> Move:
+            """Play or generate a move."""
+            color = _GTP_COLORS[request.color]
+            async with _session(manager, session_id) as transport:
+                if request.vertex is None:
+                    return await self._generate(transport, request.color)
+                reply = await self._send(transport, "play", [color, request.vertex])
+            if not reply.success:
+                error = reply.error or "The engine rejected the move."
+                # GTP says play fails with "illegal move" for a move the rules
+                # forbid. Anything else, such as a point off the board, is an
+                # invalid request.
+                kind = (
+                    ILLEGAL_MOVE
+                    if error.lower().startswith("illegal move")
+                    else INVALID_REQUEST
+                )
+                raise ProblemError(kind, error, field="vertex")
+            return Move(color=request.color, vertex=request.vertex)
+
+        @self.delete("/sessions/{session_id}/moves/last", status_code=204)
+        async def delete_last_move(  # type: ignore[unused-coroutine]
+            session_id: str,
+            manager: GTPTransportManager = Depends(get_transport_manager),
+        ) -> Response:
+            """Take back the last move."""
+            async with _session(manager, session_id) as transport:
+                reply = await self._send(transport, "undo")
+            if not reply.success:
+                raise ProblemError(
+                    NO_MOVE_TO_UNDO, reply.error or "There is no move to take back."
+                )
+            return Response(status_code=204)
+
+    async def _generate(self, transport: GTPTransport, color: str) -> Move:
+        payload = await self._query(transport, "genmove", [_GTP_COLORS[color]])
+        # Engines answer in either case, for example "pass" or "resign".
+        vertex = payload.strip().upper()
+        if not _GENERATED_VERTEX.match(vertex):
+            raise ProblemError(ENGINE_ERROR, f"Invalid generated move: {payload!r}")
+        return Move(color=color, vertex=vertex)
 
     async def _engine(self, transport: GTPTransport) -> Engine:
         commands = await self._query(transport, "list_commands")
