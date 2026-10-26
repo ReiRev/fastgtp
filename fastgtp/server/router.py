@@ -12,8 +12,10 @@ import os
 import re
 import tempfile
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncIterator, Literal, Sequence
 
+import yaml
 from fastapi import APIRouter, Depends, FastAPI, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -32,6 +34,10 @@ from .problems import (
 from .transport import GTPTransport, GTPTransportManager, TooManySessionsError
 
 logger = logging.getLogger(__name__)
+
+# The spec at the root of the repository. It is the contract, so the app serves
+# it as its OpenAPI document instead of the one FastAPI would generate.
+SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi.yaml"
 
 Color = Literal["BLACK", "WHITE"]
 _GTP_COLORS = {"BLACK": "B", "WHITE": "W"}
@@ -368,6 +374,7 @@ def create_app(
             await transport_manager.close_all()
 
     app = FastAPI(title="fastgtp", lifespan=lifespan, **app_kwargs)
+    _serve_spec(app)
     install_problem_handlers(app)
     fastgtp_router = FastGtp(retry_after_seconds=retry_after_seconds, **router_kwargs)
     app.include_router(fastgtp_router)
@@ -378,3 +385,19 @@ def create_app(
     app.dependency_overrides[get_transport_manager] = override_get_manager
 
     return app
+
+
+def _serve_spec(app: FastAPI) -> None:
+    try:
+        spec = yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
+    except OSError:
+        # An installed package does not include the spec. The generated
+        # document is then served, which differs from the spec in its error
+        # responses.
+        logger.warning("%s not found; serving the generated OpenAPI", SPEC_PATH)
+        return
+
+    def openapi() -> dict[str, Any]:
+        return spec
+
+    app.openapi = openapi  # type: ignore[method-assign]
