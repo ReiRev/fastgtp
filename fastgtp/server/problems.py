@@ -38,6 +38,7 @@ class ProblemType:
 
 INVALID_REQUEST = ProblemType(400, "Invalid request", "invalid-request")
 SESSION_NOT_FOUND = ProblemType(404, "Session not found", "session-not-found")
+TOO_MANY_SESSIONS = ProblemType(503, "Too many sessions", "too-many-sessions")
 ENGINE_ERROR = ProblemType(500, "Engine error", "engine-error")
 INTERNAL_ERROR = ProblemType(500, "Internal error", "internal-error")
 

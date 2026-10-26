@@ -212,11 +212,6 @@ class GTPTransportManager:
             self._session_locks[session_id] = asyncio.Lock()
         return session_id
 
-    async def get_transport(self, session_id: str) -> GTPTransport:
-        """Retrieve a transport for the given session id."""
-        transport, _ = await self.get_session(session_id)
-        return transport
-
     async def get_session(self, session_id: str) -> tuple[GTPTransport, asyncio.Lock]:
         """Return the session's transport and the lock that serializes its requests."""
         async with self._lock:
