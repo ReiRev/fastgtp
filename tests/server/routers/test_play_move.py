@@ -19,9 +19,9 @@ def test_play_move_invalid_session(client, invalid_session_id):
 
 def test_play_move_invalid_color(client, session_id):
     res = client.post(f"/{session_id}/play", json={"color": "R", "vertex": "D4"})
-    assert res.status_code == 422
+    assert res.status_code == 400
 
 
 def test_play_move_invalid_vertex(client, session_id):
     res = client.post(f"/{session_id}/play", json={"color": "B", "vertex": "19"})
-    assert res.status_code == 422
+    assert res.status_code == 400

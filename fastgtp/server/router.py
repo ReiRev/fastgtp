@@ -2,26 +2,35 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tempfile
 from contextlib import asynccontextmanager
 from typing import Any, Literal, Sequence
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI
 from pydantic import BaseModel, Field, field_validator
 
 from .gtp import build_command, parse_response
+from .problems import (
+    ENGINE_ERROR,
+    INTERNAL_ERROR,
+    SESSION_NOT_FOUND,
+    ProblemError,
+    install_problem_handlers,
+)
 from .transport import GTPTransport, GTPTransportManager
+
+logger = logging.getLogger(__name__)
 
 ColorType = Literal["B", "W"]
 
 
 async def get_transport_manager() -> GTPTransportManager:
     """Dependency placeholder overridden by the application."""
-    raise HTTPException(
-        status_code=500,
-        detail="GTP transport manager dependency is not configured",
+    raise ProblemError(
+        INTERNAL_ERROR, "GTP transport manager dependency is not configured"
     )
 
 
@@ -33,7 +42,7 @@ async def get_session_transport(
     try:
         return await transport_manager.get_transport(session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Unknown session") from exc
+        raise ProblemError(SESSION_NOT_FOUND, "Unknown session") from exc
 
 
 class OpenSessionResponse(BaseModel):
@@ -264,8 +273,8 @@ class FastGtp(APIRouter):
             try:
                 komi = float(payload)
             except ValueError as exc:
-                raise HTTPException(
-                    status_code=502, detail=f"Invalid komi value: {payload!r}"
+                raise ProblemError(
+                    ENGINE_ERROR, f"Invalid komi value: {payload!r}"
                 ) from exc
             return KomiValueResponse(komi=komi)
 
@@ -357,7 +366,7 @@ class FastGtp(APIRouter):
             """Terminate the session and release its transport."""
             closed = await transport_manager.close_session(session_id)
             if not closed:
-                raise HTTPException(status_code=404, detail="Unknown session")
+                raise ProblemError(SESSION_NOT_FOUND, "Unknown session")
             return QuitResponse(closed=True)
 
     async def _query(
@@ -370,18 +379,24 @@ class FastGtp(APIRouter):
         try:
             command_text = build_command(command, arguments)
             raw = await transport.send_command(command_text)
-        except Exception as exc:  # pragma: no cover - transport specific
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            # The message can hold the engine's stderr, which must not reach
+            # the client, so it is only logged.
+            logger.warning("GTP command %r failed: %s", command, exc)
+            raise ProblemError(
+                ENGINE_ERROR, "The engine did not answer the command."
+            ) from exc
 
         try:
             structured = parse_response(raw)
         except ValueError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            logger.warning("Unreadable reply to %r: %r", command, raw)
+            raise ProblemError(
+                ENGINE_ERROR, "The engine's reply could not be read."
+            ) from exc
 
         if not structured.success:
-            raise HTTPException(
-                status_code=502, detail=structured.error or "Unknown GTP error"
-            )
+            raise ProblemError(ENGINE_ERROR, structured.error or "Unknown GTP error")
 
         return structured.payload
 
@@ -407,6 +422,7 @@ def create_app(
             await transport_manager.close_all()
 
     app = FastAPI(title="fastgtp", lifespan=lifespan, **app_kwargs)
+    install_problem_handlers(app)
     fastgtp_router = FastGtp(**router_kwargs)
     app.include_router(fastgtp_router)
 

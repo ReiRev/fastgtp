@@ -14,11 +14,11 @@ fastgtp wraps a Go Text Protocol (GTP) engine process in a FastAPI service.
 
 ```bash
 poetry install
-poetry run pytest -q -k "gnugo or transport"
+poetry run pytest -q -k "not katago"
 uvx black --check <changed files>
 ```
 
-The tests run against GNU Go and KataGo. KataGo needs `/opt/katago` from the dev container. Outside it, deselect KataGo with `-k "gnugo or ..."`.
+The tests run against GNU Go and KataGo. KataGo needs `/opt/katago` from the dev container. Outside it, deselect KataGo with `-k "not katago"`, as CI does.
 
 ## Rules
 
