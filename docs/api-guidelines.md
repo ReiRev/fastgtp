@@ -45,7 +45,7 @@ Run it locally with `npx @stoplight/spectral-cli@6.15.0 lint openapi.yaml`.
 - [#150](https://opensource.zalando.com/restful-api-guidelines/#150), [#220](https://opensource.zalando.com/restful-api-guidelines/#220): Common status codes, and the most specific one.
 - [#251](https://opensource.zalando.com/restful-api-guidelines/#251): No redirects.
 - When the job queue or the session limit is full, answer `503` with `Retry-After`. `429` is only for a client that breaks a rate limit ([#153](https://opensource.zalando.com/restful-api-guidelines/#153)), and fastgtp has none.
-- When the engine fails or answers something fastgtp cannot read, answer `502`. The engine is the upstream server here, which is what `502` means in RFC 9110. Spectral warns about it because it is not on Zalando's list of well-understood codes ([#150](https://opensource.zalando.com/restful-api-guidelines/#150)).
+- When the engine fails or answers something fastgtp cannot read, answer `500` with the problem type `engine-error`. The `type` tells it apart from a bug in fastgtp, so no special status code is needed.
 - [#180](https://opensource.zalando.com/restful-api-guidelines/#180): Use `Location`, not `Content-Location`.
 
 ### Errors

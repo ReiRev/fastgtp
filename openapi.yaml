@@ -35,7 +35,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Session"
-        "502":
+        "500":
           $ref: "#/components/responses/EngineError"
         "503":
           description: |
@@ -71,7 +71,7 @@ paths:
                 $ref: "#/components/schemas/Session"
         "404":
           $ref: "#/components/responses/SessionNotFound"
-        "502":
+        "500":
           $ref: "#/components/responses/EngineError"
         default:
           $ref: "#/components/responses/Problem"
@@ -102,7 +102,7 @@ paths:
                 $ref: "#/components/schemas/Board"
         "404":
           $ref: "#/components/responses/SessionNotFound"
-        "502":
+        "500":
           $ref: "#/components/responses/EngineError"
         default:
           $ref: "#/components/responses/Problem"
@@ -133,7 +133,7 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "404":
           $ref: "#/components/responses/SessionNotFound"
-        "502":
+        "500":
           $ref: "#/components/responses/EngineError"
         default:
           $ref: "#/components/responses/Problem"
@@ -172,7 +172,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
-        "502":
+        "500":
           $ref: "#/components/responses/EngineError"
         default:
           $ref: "#/components/responses/Problem"
@@ -197,7 +197,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
-        "502":
+        "500":
           $ref: "#/components/responses/EngineError"
         default:
           $ref: "#/components/responses/Problem"
@@ -306,7 +306,7 @@ components:
           description: |
             The SGF game record. If the engine rejects it, the answer is
             `400`. Some engines stop on SGF they cannot parse, which answers
-            `502`. The session stays, and fastgtp starts its engine again
+            `500`. The session stays, and fastgtp starts its engine again
             with an empty board on the next call.
           example: "(;GM[1]SZ[19]KM[6.5];B[pd];W[dp])"
         move_count:
