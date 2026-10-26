@@ -61,3 +61,10 @@ def test_routes_match_the_spec():
         if method in METHODS
     }
     assert built == specified
+
+
+def test_root_path_becomes_a_server():
+    app = create_app(GTPTransportManager(NoEngine()))
+    with TestClient(app, root_path="/api") as c:
+        res = c.get("/openapi.json")
+    assert res.json()["servers"] == [{"url": "/api"}]

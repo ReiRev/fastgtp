@@ -36,7 +36,8 @@ from .transport import GTPTransport, GTPTransportManager, TooManySessionsError
 logger = logging.getLogger(__name__)
 
 # The spec at the root of the repository. It is the contract, so the app serves
-# it as its OpenAPI document instead of the one FastAPI would generate.
+# it as its OpenAPI document instead of the one FastAPI would generate. The
+# server runs from a checkout or the Docker image, which both have the file.
 SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi.yaml"
 
 Color = Literal["BLACK", "WHITE"]
@@ -388,16 +389,15 @@ def create_app(
 
 
 def _serve_spec(app: FastAPI) -> None:
-    try:
-        spec = yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
-    except OSError:
-        # An installed package does not include the spec. The generated
-        # document is then served, which differs from the spec in its error
-        # responses.
-        logger.warning("%s not found; serving the generated OpenAPI", SPEC_PATH)
-        return
+    # No fallback to the generated document: it differs from the spec in its
+    # error responses, and serving it quietly would hide a missing file.
+    spec = yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
 
     def openapi() -> dict[str, Any]:
+        # FastAPI adds the proxy's root path to app.servers before it asks for
+        # the document. Without it, /docs would send requests past the prefix.
+        if app.servers and "servers" not in spec:
+            return {**spec, "servers": app.servers}
         return spec
 
     app.openapi = openapi  # type: ignore[method-assign]
