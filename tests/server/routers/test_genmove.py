@@ -13,7 +13,7 @@ def test_genmove(client, session_id):
 
 def test_genmove_invalid_color(client, session_id):
     res = client.post(f"/{session_id}/genmove", json={"color": "R"})
-    assert res.status_code == 422
+    assert res.status_code == 400
 
 
 def test_genmove_invalid_session(client, invalid_session_id):
