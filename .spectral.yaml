@@ -1,0 +1,11 @@
+# Zalando rules from baloise-incubator/spectral-ruleset, pinned to one commit
+# so that a change upstream does not fail unrelated pull requests.
+extends:
+  - https://raw.githubusercontent.com/baloise-incubator/spectral-ruleset/e1ad7a01cd0ce4aec68b04d02c3f3c20c82016c7/zalando.yml
+# Rules that docs/api-guidelines.md lists under "Rules we skip".
+rules:
+  should-use-x-extensible-enum: off # 112
+  must-provide-api-identifiers: off # 215
+  must-have-info-x-api-id: off # 215
+  must-provide-api-audience: off # 219
+  must-have-info-contact-email: off # 218, contact email

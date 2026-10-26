@@ -39,3 +39,13 @@ jobs:
           python-version: "3.12"
       # Pinned so a new black release does not fail pull requests that did not change.
       - run: pipx run black==26.10.1 --check fastgtp tests
+
+  spec:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      # Fails on errors only. Warnings are shown but do not fail the job.
+      - run: npx -y @stoplight/spectral-cli@6.15.0 lint openapi.yaml

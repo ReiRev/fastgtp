@@ -5,8 +5,9 @@ This page lists the rules we use, the rules we skip, and how we apply them to GT
 Each number links to the rule: `https://opensource.zalando.com/restful-api-guidelines/#<number>`.
 Read the rule itself when this page is not enough.
 
-When `openapi.yaml` is added, CI will check it with [Spectral](https://github.com/stoplightio/spectral)
-and the [Zalando ruleset](https://github.com/baloise-incubator/spectral-ruleset), with the skipped rules below turned off.
+CI checks `openapi.yaml` with [Spectral](https://github.com/stoplightio/spectral)
+and the [Zalando ruleset](https://github.com/baloise-incubator/spectral-ruleset), with the skipped rules below turned off (`.spectral.yaml`).
+Run it locally with `npx @stoplight/spectral-cli@6.15.0 lint openapi.yaml`.
 
 ## Rules we follow
 
@@ -68,6 +69,7 @@ and the [Zalando ruleset](https://github.com/baloise-incubator/spectral-ruleset)
 | #114 (media type versioning) | Only needed for a breaking change, and we avoid those. Revisit if one is needed. |
 | #183, #184, #233 (Zalando headers, `X-Flow-ID`) | Zalando-internal. |
 | #215, #219, #223, #224 (API id, audience, host names) | Zalando-internal. |
+| #218, contact email only | The repository is public. `info.contact.url` points to the repository instead. |
 | #185, #186, #188, #190, #191 (deprecation process) | Assume a company with known clients. |
 | #193 (monitoring), #156 (gzip), #157, #158 (partial responses, embedding) | Not needed at this size. |
 | #163 to #166, #217 (hypermedia links, absolute URIs) | Not needed. `Location` may be relative, as RFC 9110 allows. |

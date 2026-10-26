@@ -7,7 +7,7 @@ description: Steps for any change to fastgtp's HTTP API, such as a new route, a 
 
 1. Read `docs/api-guidelines.md`. When a rule there is not clear, read the linked Zalando rule.
 2. Write the change in the API spec (`openapi.yaml`) before any code: paths, request and response schemas, status codes, and problem types.
-3. If `.spectral.yaml` exists, lint the spec: `npx @stoplight/spectral-cli lint openapi.yaml`. Fix every error.
+3. If `.spectral.yaml` exists, lint the spec: `npx @stoplight/spectral-cli@6.15.0 lint openapi.yaml`. Fix every error.
 4. Show the spec change to the owner and wait for agreement. Do not answer a design question with code.
 5. Implement the routes to match the spec. Field names, status codes and error bodies must be the same as in the spec.
 6. For a new problem type, add a section to `docs/problems.md` (create the file if it is missing) and point its `type` URI there.
