@@ -194,3 +194,17 @@ def test_unreadable_generated_move(client, replies, session_id):
     replies["genmove"] = "= somewhere\n\n"
     res = client.post(f"/sessions/{session_id}/moves", json={"color": "BLACK"})
     assert_problem(res, 500, PROBLEMS + "engine-error")
+
+
+def test_play_without_answer(client, replies, session_id):
+    replies["play"] = RuntimeError(SECRET)
+    res = client.post(
+        f"/sessions/{session_id}/moves", json={"color": "BLACK", "vertex": "D4"}
+    )
+    assert_problem(res, 500, PROBLEMS + "engine-error")
+
+
+def test_undo_without_answer(client, replies, session_id):
+    replies["undo"] = RuntimeError(SECRET)
+    res = client.delete(f"/sessions/{session_id}/moves/last")
+    assert_problem(res, 500, PROBLEMS + "engine-error")
