@@ -37,6 +37,21 @@ paths:
                 $ref: "#/components/schemas/Session"
         "502":
           $ref: "#/components/responses/EngineError"
+        "503":
+          description: |
+            fastgtp already runs as many sessions as it allows. Delete a
+            session or try again later. The problem `type` is
+            `.../problems.md#too-many-sessions`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+                format: int32
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -98,6 +113,9 @@ paths:
         Replaces the whole board. Send either an empty board (`size` and
         `komi`) or a position from SGF (`sgf`). The moves played so far are
         dropped.
+
+        If this call fails, the board may already have changed. Replace it
+        again before you go on.
       requestBody:
         required: true
         content:
@@ -285,13 +303,18 @@ components:
       properties:
         sgf:
           type: string
-          description: The SGF game record. If the engine cannot read it, the answer is `400`.
+          description: |
+            The SGF game record. If the engine rejects it, the answer is
+            `400`. Some engines stop on SGF they cannot parse, which answers
+            `502`.
           example: "(;GM[1]SZ[19]KM[6.5];B[pd];W[dp])"
-        move_number:
+        move_count:
           type: integer
           format: int32
-          minimum: 1
-          description: Load the game up to this move. Without it, the whole game is loaded.
+          minimum: 0
+          description: |
+            Load only the first this many moves of the game. `0` gives the
+            setup position. Without it, the whole game is loaded.
           example: 30
 
     MoveInput:
@@ -319,8 +342,9 @@ components:
           type: string
           description: |
             The point played, or `PASS`. A generated move can also be
-            `RESIGN`, which means the engine gives up and the board does not
-            change.
+            `RESIGN`, which means the engine gives up. A resignation does not
+            change the board and is not a move that `DELETE .../moves/last`
+            takes back.
           pattern: "^([A-HJ-Z][1-9][0-9]?|PASS|RESIGN)$"
           example: D4
 
