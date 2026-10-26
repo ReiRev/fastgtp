@@ -45,6 +45,8 @@ def replies() -> dict[str, Any]:
         "version": "= 1\n\n",
         "protocol_version": "= 2\n\n",
         "list_commands": "= name\n\n",
+        "printsgf": "= (;SZ[19])\n\n",
+        "get_komi": "= 6.5\n\n",
     }
 
 
@@ -140,3 +142,42 @@ def test_wrong_method(client):
 def test_unexpected_error(client):
     res = client.get("/broken")
     assert_problem(res, 500, PROBLEMS + "internal-error")
+
+
+def test_validation_error_is_400_with_field(client, session_id):
+    res = client.put(f"/sessions/{session_id}/board", json={"size": 1, "komi": 0})
+    body = assert_problem(res, 400, PROBLEMS + "invalid-request")
+    assert body["field"] == "size"
+
+
+def test_wrong_type_is_not_echoed(client, session_id):
+    res = client.put(
+        f"/sessions/{session_id}/board", json={"size": "huge-input", "komi": 0}
+    )
+    body = assert_problem(res, 400, PROBLEMS + "invalid-request")
+    assert body["field"] == "size"
+    assert "huge-input" not in res.text
+
+
+def test_malformed_json_has_no_field(client, session_id):
+    res = client.put(
+        f"/sessions/{session_id}/board",
+        content='{"size": 9,',
+        headers={"content-type": "application/json"},
+    )
+    body = assert_problem(res, 400, PROBLEMS + "invalid-request")
+    assert "field" not in body
+
+
+def test_sgf_error_hides_temp_path(client, replies, session_id):
+    # GNU Go names the file it could not load.
+    replies["loadsgf"] = lambda command: f"? cannot load '{command.split()[1]}'\n\n"
+    res = client.put(f"/sessions/{session_id}/board", json={"sgf": "(;SZ[99])"})
+    body = assert_problem(res, 400, PROBLEMS + "invalid-request")
+    assert body["detail"] == "cannot load the SGF"
+
+
+def test_unreadable_komi(client, replies, session_id):
+    replies["get_komi"] = "= not a number\n\n"
+    res = client.get(f"/sessions/{session_id}/board")
+    assert_problem(res, 500, PROBLEMS + "engine-error")

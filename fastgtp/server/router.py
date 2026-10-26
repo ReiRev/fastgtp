@@ -8,16 +8,20 @@ describes.
 from __future__ import annotations
 
 import logging
+import os
+import re
+import tempfile
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Sequence
 
 from fastapi import APIRouter, Depends, FastAPI, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .gtp import ParsedResponse, build_command, parse_response
 from .problems import (
     ENGINE_ERROR,
     INTERNAL_ERROR,
+    INVALID_REQUEST,
     SESSION_NOT_FOUND,
     TOO_MANY_SESSIONS,
     ProblemError,
@@ -26,6 +30,10 @@ from .problems import (
 from .transport import GTPTransport, GTPTransportManager, TooManySessionsError
 
 logger = logging.getLogger(__name__)
+
+_SGF_SIZE = re.compile(r"\bSZ\[(\d+)")
+# SGF's default when a record has no SZ property.
+_DEFAULT_SIZE = 19
 
 
 async def get_transport_manager() -> GTPTransportManager:
@@ -60,6 +68,34 @@ class Engine(BaseModel):
 class Session(BaseModel):
     session_id: str
     engine: Engine
+
+
+class Board(BaseModel):
+    size: int
+    komi: float
+    sgf: str
+
+
+class BoardInput(BaseModel):
+    """Either an empty board (``size`` and ``komi``) or a position (``sgf``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    size: int | None = Field(default=None, ge=2, le=25)
+    komi: float | None = Field(default=None, allow_inf_nan=False)
+    sgf: str | None = None
+    move_count: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def one_kind(self) -> BoardInput:
+        if self.sgf is not None:
+            if self.size is not None or self.komi is not None:
+                raise ValueError("send either size and komi, or sgf, not both")
+        elif self.size is None or self.komi is None:
+            raise ValueError("send size and komi, or sgf")
+        elif self.move_count is not None:
+            raise ValueError("move_count is only used with sgf")
+        return self
 
 
 class FastGtp(APIRouter):
@@ -117,6 +153,45 @@ class FastGtp(APIRouter):
                 raise ProblemError(SESSION_NOT_FOUND, "Unknown session")
             return Response(status_code=204)
 
+        @self.get("/sessions/{session_id}/board")
+        async def get_board(  # type: ignore[unused-coroutine]
+            session_id: str,
+            manager: GTPTransportManager = Depends(get_transport_manager),
+        ) -> Board:
+            """Read the board."""
+            async with _session(manager, session_id) as transport:
+                return await self._board(transport)
+
+        @self.put("/sessions/{session_id}/board")
+        async def replace_board(  # type: ignore[unused-coroutine]
+            session_id: str,
+            request: BoardInput,
+            manager: GTPTransportManager = Depends(get_transport_manager),
+        ) -> Board:
+            """Replace the board."""
+            async with _session(manager, session_id) as transport:
+                if request.sgf is not None:
+                    await self._load_sgf(transport, request.sgf, request.move_count)
+                else:
+                    reply = await self._send(
+                        transport, "boardsize", [str(request.size)]
+                    )
+                    if not reply.success:
+                        raise ProblemError(
+                            INVALID_REQUEST,
+                            reply.error or "The engine rejected the board size.",
+                            field="size",
+                        )
+                    await self._query(transport, "clear_board")
+                    reply = await self._send(transport, "komi", [str(request.komi)])
+                    if not reply.success:
+                        raise ProblemError(
+                            INVALID_REQUEST,
+                            reply.error or "The engine rejected the komi.",
+                            field="komi",
+                        )
+                return await self._board(transport)
+
     async def _engine(self, transport: GTPTransport) -> Engine:
         commands = await self._query(transport, "list_commands")
         return Engine(
@@ -125,6 +200,50 @@ class FastGtp(APIRouter):
             protocol_version=await self._query(transport, "protocol_version"),
             commands=[line for line in commands.splitlines() if line],
         )
+
+    async def _board(self, transport: GTPTransport) -> Board:
+        sgf = await self._query(transport, "printsgf")
+        komi = await self._query(transport, "get_komi")
+        try:
+            komi_value = float(komi)
+        except ValueError as exc:
+            raise ProblemError(ENGINE_ERROR, f"Invalid komi value: {komi!r}") from exc
+        match = _SGF_SIZE.search(sgf)
+        size = int(match.group(1)) if match else _DEFAULT_SIZE
+        return Board(size=size, komi=komi_value, sgf=sgf)
+
+    async def _load_sgf(
+        self, transport: GTPTransport, sgf: str, move_count: int | None
+    ) -> None:
+        # GTP loadsgf reads a file, so the record goes through a temporary one.
+        temp = tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", suffix=".sgf", delete=False
+        )
+        try:
+            temp.write(sgf)
+        finally:
+            temp.close()
+        filename = temp.name
+        args = [filename]
+        if move_count is not None:
+            # loadsgf stops before the move it is given, so the first N moves
+            # are loaded with N + 1.
+            args.append(str(move_count + 1))
+        try:
+            reply = await self._send(transport, "loadsgf", args)
+        finally:
+            try:
+                os.remove(filename)
+            except OSError:
+                pass
+        if not reply.success:
+            # Engines repeat the file name in their errors, and the server's
+            # temporary path must not reach the client.
+            error = reply.error or "The engine could not load the SGF."
+            error = error.replace(f"'{filename}'", "the SGF")
+            raise ProblemError(
+                INVALID_REQUEST, error.replace(filename, "the SGF"), field="sgf"
+            )
 
     async def _send(
         self,
