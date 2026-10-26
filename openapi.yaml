@@ -692,6 +692,7 @@ components:
             - `.../problems.md#illegal-move`, `400`: a move is not legal.
               `field` names it, for example `moves[10]`.
             - `#illegal-setup`, `400`: the setup stones are not legal.
+              `field` is `setup_stones`.
             - `#engine-error`, `500`: the engine failed.
             - `#analysis-timed-out`, `500`: the job ran too long.
             - `#internal-error`, `500`: a bug in fastgtp.
