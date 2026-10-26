@@ -17,7 +17,6 @@ import os
 
 from . import GTPTransportManager, SubprocessGTPTransport, create_app
 
-
 command = os.environ.get("FASTGTP_ENGINE")
 if command is None:
     raise RuntimeError(
