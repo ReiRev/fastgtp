@@ -280,20 +280,28 @@ paths:
             The request is not valid. The problem `type` is one of
             `.../problems.md#invalid-request`, `#profile-not-found` (no
             profile with `profile_name`) or `#too-many-moves` (more moves
-            than the profile's `max_moves`).
+            than the profile's `max_moves`). A point that is off the board
+            is an `invalid-request`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "501":
+          description: |
+            The profile's engine lacks the GTP commands that analysis needs
+            (its `available` is false). The problem `type` is
+            `.../problems.md#analysis-not-supported`.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "503":
           description: |
-            The job cannot be queued now. The problem `type` is
-            `.../problems.md#queue-full` (try again after `Retry-After`) or
-            `#profile-unavailable` (the profile's engine or network is
-            missing; trying again does not help until the server is fixed).
+            The queue is full. Try again after `Retry-After`. The problem
+            `type` is `.../problems.md#queue-full`.
           headers:
             Retry-After:
-              description: Seconds to wait before trying again. Sent with `queue-full` only.
+              description: Seconds to wait before trying again.
               schema:
                 type: integer
                 format: int32
@@ -525,6 +533,8 @@ components:
       description: |
         A named set of analysis settings. A name always means the same
         settings: to change one, the server adds a profile with a new name.
+        fastgtp does not start if a profile's engine or network file is
+        missing.
       required: [profile_name, available, conditions, max_moves]
       properties:
         profile_name:
@@ -532,7 +542,10 @@ components:
           example: winrate-v1
         available:
           type: boolean
-          description: False when the profile's engine or network is missing. Jobs for it answer `503`.
+          description: |
+            False when the engine lacks the GTP commands that analysis needs
+            (KataGo's `kata-set-rules`, `set_position` and
+            `kata-search_analyze`). Jobs for it answer `501`.
         conditions:
           $ref: "#/components/schemas/Conditions"
         max_moves:
@@ -563,7 +576,10 @@ components:
           pattern: "^[0-9a-f]{64}$"
         config_sha256:
           type: string
-          description: Hash of the engine's config file, the settings fastgtp adds to it, and the engine's command line.
+          description: |
+            Hash of the config file's contents, the settings fastgtp adds to
+            it, and the profile's engine arguments. File paths are left out,
+            so a profile hashes the same on every machine.
           pattern: "^[0-9a-f]{64}$"
         visits:
           type: integer
@@ -613,6 +629,7 @@ components:
         setup_stones:
           type: array
           description: Stones on the board before the first move, such as handicap stones.
+          maxItems: 361
           items:
             $ref: "#/components/schemas/Stone"
         first_color:
@@ -671,8 +688,13 @@ components:
           $ref: "#/components/schemas/Problem"
           description: |
             Why the job failed. Set only when `status` is `FAILED`. The
-            `type` is one of `.../problems.md#illegal-move`,
-            `#illegal-setup`, `#engine-error` or `#analysis-timed-out`.
+            `type` and `status` are one of:
+            - `.../problems.md#illegal-move`, `400`: a move is not legal.
+              `field` names it, for example `moves[10]`.
+            - `#illegal-setup`, `400`: the setup stones are not legal.
+            - `#engine-error`, `500`: the engine failed.
+            - `#analysis-timed-out`, `500`: the job ran too long.
+            - `#internal-error`, `500`: a bug in fastgtp.
 
     Progress:
       type: object
@@ -739,6 +761,12 @@ components:
         detail:
           type: string
           example: D4 is already occupied.
+        field:
+          type: string
+          description: |
+            The part of the request the problem is about, when there is one,
+            for example `moves[10]` or `setup_stones`.
+          example: moves[10]
         instance:
           type: string
           format: uri-reference
