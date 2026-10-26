@@ -167,51 +167,105 @@ async def _shut_down(process: Process, stderr_task: asyncio.Task[None] | None) -
             await stderr_task
 
 
+class TooManySessionsError(Exception):
+    """Raised when opening a session would pass the session limit."""
+
+
 class GTPTransportManager:
     """Manage transport instances keyed by session identifiers."""
 
-    def __init__(self, transport: GTPTransport):
+    def __init__(self, transport: GTPTransport, *, max_sessions: int | None = None):
+        """Copy ``transport`` for each session, keeping at most ``max_sessions``."""
         self._transport = transport
+        self._max_sessions = max_sessions
         self._sessions: dict[str, GTPTransport] = {}
+        # One lock per session, so that a request that sends several commands
+        # is not interleaved with another request to the same engine.
+        self._session_locks: dict[str, asyncio.Lock] = {}
+        self._starting = 0
+        self._closing = 0
         self._lock = asyncio.Lock()
 
     async def open_session(self) -> str:
         """Create and store a new transport, returning its session id."""
-        transport = self._transport.copy()
-        if asyncio.iscoroutine(transport):  # pragma: no cover - defensive
-            transport = await transport  # type: ignore[assignment]
-        await transport.open()
+        async with self._lock:
+            # Engines that are still starting or stopping count too, or a
+            # burst of requests could run more engines than the limit.
+            count = len(self._sessions) + self._starting + self._closing
+            if self._max_sessions is not None and count >= self._max_sessions:
+                raise TooManySessionsError()
+            self._starting += 1
+        try:
+            transport = self._transport.copy()
+            if asyncio.iscoroutine(transport):  # pragma: no cover - defensive
+                transport = await transport  # type: ignore[assignment]
+            await transport.open()
+        finally:
+            async with self._lock:
+                self._starting -= 1
 
         session_id = uuid.uuid4().hex
         async with self._lock:
             while session_id in self._sessions:
                 session_id = uuid.uuid4().hex
             self._sessions[session_id] = transport
+            self._session_locks[session_id] = asyncio.Lock()
         return session_id
 
     async def get_transport(self, session_id: str) -> GTPTransport:
         """Retrieve a transport for the given session id."""
+        transport, _ = await self.get_session(session_id)
+        return transport
+
+    async def get_session(self, session_id: str) -> tuple[GTPTransport, asyncio.Lock]:
+        """Return the session's transport and the lock that serializes its requests."""
         async with self._lock:
             transport = self._sessions.get(session_id)
-        if transport is None:
+            lock = self._session_locks.get(session_id)
+        if transport is None or lock is None:
             raise KeyError(session_id)
-        return transport
+        return transport, lock
 
     async def close_session(self, session_id: str) -> bool:
         """Close and remove the transport for the given session."""
         transport: GTPTransport | None
         async with self._lock:
             transport = self._sessions.pop(session_id, None)
-        if transport is None:
-            return False
-        await transport.aclose()
+            lock = self._session_locks.pop(session_id, None)
+            if transport is None or lock is None:
+                return False
+            self._closing += 1
+
+        async def close_when_free() -> None:
+            # Waiting for the session's lock lets a running request finish
+            # first. Closing under it would leave that request to restart the
+            # engine, with nothing tracking the new process.
+            try:
+                async with lock:
+                    await transport.aclose()
+            finally:
+                async with self._lock:
+                    self._closing -= 1
+
+        # Shielded, so a cancelled caller does not leave the engine running
+        # after the session is already gone from the table.
+        closing = asyncio.ensure_future(close_when_free())
+        _shutdowns.add(closing)
+        closing.add_done_callback(_shutdowns.discard)
+        await asyncio.shield(closing)
         return True
+
+    async def is_open(self, session_id: str, transport: GTPTransport) -> bool:
+        """Tell whether ``transport`` still belongs to an open session."""
+        async with self._lock:
+            return self._sessions.get(session_id) is transport
 
     async def close_all(self) -> None:
         """Close and clear all managed transports."""
         async with self._lock:
             transports = list(self._sessions.values())
             self._sessions.clear()
+            self._session_locks.clear()
         results = await asyncio.gather(
             *(transport.aclose() for transport in transports),
             return_exceptions=True,
@@ -227,4 +281,5 @@ __all__ = [
     "GTPTransport",
     "GTPTransportManager",
     "SubprocessGTPTransport",
+    "TooManySessionsError",
 ]
