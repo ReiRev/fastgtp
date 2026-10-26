@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from fastgtp import GTPTransportManager, create_app
-from fastgtp.server.router import SPEC_PATH
+from fastgtp.server.router import SPEC
 
 # In the spec but not built yet (issues #11 and #12).
 NOT_YET_BUILT = {
@@ -34,7 +34,7 @@ class NoEngine:
 
 
 def load_spec() -> dict:
-    return yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
+    return yaml.safe_load(SPEC.read_text(encoding="utf-8"))
 
 
 def test_serves_the_spec():

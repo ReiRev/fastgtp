@@ -77,7 +77,7 @@ COPY .devcontainer/fastgtp.cfg ${KATAGO_ROOT}/configs/fastgtp.cfg
 
 # Copy project source for runtime usage and expose it on PYTHONPATH
 COPY --chown=${USERNAME}:${USER_GID} fastgtp /opt/fastgtp-app/fastgtp
-COPY --chown=${USERNAME}:${USER_GID} pyproject.toml README.md openapi.yaml /opt/fastgtp-app/
+COPY --chown=${USERNAME}:${USER_GID} pyproject.toml README.md /opt/fastgtp-app/
 ENV PYTHONPATH=/opt/fastgtp-app
 
 # Install project runtime dependencies via Poetry

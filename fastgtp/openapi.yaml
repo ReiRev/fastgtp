@@ -1,0 +1,814 @@
+openapi: 3.1.0
+info:
+  title: fastgtp
+  version: 0.1.0
+  description: |
+    fastgtp runs Go Text Protocol (GTP) engines and exposes them over HTTP.
+
+    A session is one engine process. Create a session, set up the board,
+    then play or generate moves. Delete the session when you are done, so
+    the engine process stops.
+
+    Requests to one session run one at a time, in the order they arrive.
+
+    An analysis job computes the win rate of every position in a game. A
+    profile fixes the engine, network and settings, so the same job with
+    the same profile gives the same numbers.
+  contact:
+    name: fastgtp
+    url: https://github.com/ReiRev/fastgtp
+  license:
+    name: PolyForm Noncommercial License 1.0.0
+    url: https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+paths:
+  /sessions:
+    post:
+      operationId: createSession
+      summary: Start an engine
+      description: Starts a new engine process with an empty board.
+      responses:
+        "201":
+          description: The session was created.
+          headers:
+            Location:
+              description: The path of the new session, for example `/sessions/3f2a9c`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        "503":
+          description: |
+            fastgtp already runs as many sessions as it allows. Delete a
+            session or try again later. The problem `type` is
+            `.../problems.md#too-many-sessions`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+                format: int32
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: getSession
+      summary: Read a session
+      description: Returns the session and what its engine reports about itself.
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteSession
+      summary: Stop an engine
+      description: Stops the engine process and removes the session.
+      responses:
+        "204":
+          description: The session was removed.
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}/board:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: getBoard
+      summary: Read the board
+      responses:
+        "200":
+          description: The current board.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: replaceBoard
+      summary: Replace the board
+      description: |
+        Replaces the whole board. Send either an empty board (`size` and
+        `komi`) or a position from SGF (`sgf`). The moves played so far are
+        dropped.
+
+        If this call fails, the board may already have changed. Replace it
+        again before you go on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoardInput"
+      responses:
+        "200":
+          description: The new board.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}/moves:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: createMove
+      summary: Play or generate a move
+      description: |
+        With `vertex`, plays that move (GTP `play`). Without `vertex`, the
+        engine chooses and plays a move (GTP `genmove`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveInput"
+      responses:
+        "201":
+          description: The move was played.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Move"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "409":
+          description: |
+            The move is not legal in the current position. The problem
+            `type` is `.../problems.md#illegal-move`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sessions/{session_id}/moves/last:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    delete:
+      operationId: deleteLastMove
+      summary: Take back the last move
+      description: Takes back the last move (GTP `undo`).
+      responses:
+        "204":
+          description: The last move was taken back.
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "409":
+          description: |
+            There is no move to take back. The problem `type` is
+            `.../problems.md#no-move-to-undo`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/EngineError"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /profiles:
+    get:
+      operationId: listProfiles
+      summary: List the profiles
+      description: The list is short and fixed by the server's configuration, so it is not paginated.
+      responses:
+        "200":
+          description: All profiles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileList"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /profiles/{profile_name}:
+    parameters:
+      - $ref: "#/components/parameters/ProfileName"
+    get:
+      operationId: getProfile
+      summary: Read a profile
+      responses:
+        "200":
+          description: The profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "404":
+          description: |
+            There is no profile with this name. The problem `type` is
+            `.../problems.md#profile-not-found`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /analysis-jobs:
+    post:
+      operationId: createAnalysisJob
+      summary: Analyze a game
+      description: |
+        Queues a job that analyzes every position of the game. Poll the job
+        at `Location` until its status is `SUCCEEDED` or `FAILED`.
+
+        Each job runs in a new engine process, so earlier jobs cannot change
+        its result.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisJobInput"
+      responses:
+        "201":
+          description: The job was queued.
+          headers:
+            Location:
+              description: The path of the new job, for example `/analysis-jobs/8b1e4f`.
+              schema:
+                type: string
+            Retry-After:
+              $ref: "#/components/headers/PollAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "400":
+          description: |
+            The request is not valid. The problem `type` is one of
+            `.../problems.md#invalid-request`, `#profile-not-found` (no
+            profile with `profile_name`) or `#too-many-moves` (more moves
+            than the profile's `max_moves`). A point that is off the board
+            is an `invalid-request`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "501":
+          description: |
+            The profile's engine lacks the GTP commands that analysis needs
+            (its `available` is false). The problem `type` is
+            `.../problems.md#analysis-not-supported`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: |
+            The queue is full. Try again after `Retry-After`. The problem
+            `type` is `.../problems.md#queue-full`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+                format: int32
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /analysis-jobs/{job_id}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      operationId: getAnalysisJob
+      summary: Read a job
+      description: |
+        Returns the job's status, and its result once it has succeeded.
+        Jobs are kept in memory. A finished job is removed after a while,
+        and every job is lost when fastgtp restarts; both then answer `404`.
+      responses:
+        "200":
+          description: The job.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/PollAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "404":
+          $ref: "#/components/responses/JobNotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteAnalysisJob
+      summary: Delete a job
+      description: Removes the job. A job that has not finished is stopped first.
+      responses:
+        "204":
+          description: The job was removed.
+        "404":
+          $ref: "#/components/responses/JobNotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+components:
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      description: The id from `POST /sessions`.
+      schema:
+        type: string
+
+    ProfileName:
+      name: profile_name
+      in: path
+      required: true
+      schema:
+        type: string
+      example: winrate-v1
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      description: The id from `POST /analysis-jobs`.
+      schema:
+        type: string
+
+  headers:
+    PollAfter:
+      description: |
+        Seconds to wait before reading the job again. Sent while the job is
+        `QUEUED` or `RUNNING`.
+      schema:
+        type: integer
+        format: int32
+
+  schemas:
+    Session:
+      type: object
+      required: [session_id, engine]
+      properties:
+        session_id:
+          type: string
+          description: An opaque id. Do not parse it.
+          example: 3f2a9c0d8e7b4a6c9d1e2f3a4b5c6d7e
+        engine:
+          $ref: "#/components/schemas/Engine"
+
+    Engine:
+      type: object
+      description: What the engine reports about itself.
+      required: [name, version, protocol_version, commands]
+      properties:
+        name:
+          type: string
+          description: GTP `name`.
+          example: GNU Go
+        version:
+          type: string
+          description: GTP `version`.
+          example: "3.8"
+        protocol_version:
+          type: string
+          description: GTP `protocol_version`.
+          example: "2"
+        commands:
+          type: array
+          description: GTP `list_commands`. Shows which GTP commands the engine has.
+          items:
+            type: string
+          example: [play, genmove, undo]
+
+    Color:
+      type: string
+      enum: [BLACK, WHITE]
+
+    Board:
+      type: object
+      required: [size, komi, sgf]
+      properties:
+        size:
+          type: integer
+          format: int32
+          description: The number of lines on each side.
+          example: 19
+        komi:
+          type: number
+          format: double
+          example: 6.5
+        sgf:
+          type: string
+          description: The current position as SGF, as the engine writes it (GTP `printsgf`).
+          example: "(;GM[1]SZ[19]KM[6.5]AB[pd]AW[dp])"
+
+    BoardInput:
+      oneOf:
+        - $ref: "#/components/schemas/EmptyBoardInput"
+        - $ref: "#/components/schemas/SgfBoardInput"
+
+    EmptyBoardInput:
+      type: object
+      description: An empty board (GTP `boardsize`, `clear_board` and `komi`).
+      required: [size, komi]
+      additionalProperties: false
+      properties:
+        size:
+          type: integer
+          format: int32
+          minimum: 2
+          maximum: 25
+          description: |
+            The number of lines on each side. The engine may reject some
+            sizes, which answers `400`.
+          example: 19
+        komi:
+          type: number
+          format: double
+          example: 6.5
+
+    SgfBoardInput:
+      type: object
+      description: A position from an SGF game record (GTP `loadsgf`).
+      required: [sgf]
+      additionalProperties: false
+      properties:
+        sgf:
+          type: string
+          description: |
+            The SGF game record. If the engine rejects it, the answer is
+            `400`. Some engines stop on SGF they cannot parse, which answers
+            `500`. The session stays, and fastgtp starts its engine again
+            with an empty board on the next call.
+          example: "(;GM[1]SZ[19]KM[6.5];B[pd];W[dp])"
+        move_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            Load only the first this many moves of the game. `0` gives the
+            setup position. Without it, the whole game is loaded.
+          example: 30
+
+    MoveInput:
+      type: object
+      required: [color]
+      additionalProperties: false
+      properties:
+        color:
+          $ref: "#/components/schemas/Color"
+        vertex:
+          type: string
+          description: |
+            The point to play, as in GTP: a column letter (no `I`) and a row
+            number, or `PASS`. Leave it out to let the engine choose.
+          pattern: "^([A-HJ-Z][1-9][0-9]?|PASS)$"
+          example: D4
+
+    Move:
+      type: object
+      required: [color, vertex]
+      properties:
+        color:
+          $ref: "#/components/schemas/Color"
+        vertex:
+          type: string
+          description: |
+            The point played, or `PASS`. A generated move can also be
+            `RESIGN`, which means the engine gives up. A resignation does not
+            change the board and is not a move that `DELETE .../moves/last`
+            takes back.
+          pattern: "^([A-HJ-Z][1-9][0-9]?|PASS|RESIGN)$"
+          example: D4
+
+    ProfileList:
+      type: object
+      required: [profiles]
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Profile"
+
+    Profile:
+      type: object
+      description: |
+        A named set of analysis settings. A name always means the same
+        settings: to change one, the server adds a profile with a new name.
+        fastgtp does not start if a profile's engine or network file is
+        missing.
+      required: [profile_name, available, conditions, max_moves]
+      properties:
+        profile_name:
+          type: string
+          example: winrate-v1
+        available:
+          type: boolean
+          description: |
+            False when the engine lacks the GTP commands that analysis needs
+            (KataGo's `kata-set-rules`, `set_position` and
+            `kata-search_analyze`). Jobs for it answer `501`.
+        conditions:
+          $ref: "#/components/schemas/Conditions"
+        max_moves:
+          type: integer
+          format: int32
+          description: The most moves a job for this profile may have.
+          example: 600
+
+    Conditions:
+      type: object
+      description: |
+        Everything that decides the numbers. Store it with the results to
+        know later how they were made.
+      required: [engine_name, engine_version, model_name, model_sha256, config_sha256, visits]
+      properties:
+        engine_name:
+          type: string
+          example: KataGo
+        engine_version:
+          type: string
+          example: 1.16.3
+        model_name:
+          type: string
+          description: The file name of the network.
+          example: kata1-b28c512nbt-s11233360640-d5406293331.bin.gz
+        model_sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        config_sha256:
+          type: string
+          description: |
+            Hash of the config file's contents, the settings fastgtp adds to
+            it, and the profile's engine arguments. File paths are left out,
+            so a profile hashes the same on every machine.
+          pattern: "^[0-9a-f]{64}$"
+        visits:
+          type: integer
+          format: int32
+          description: The search visits for each position.
+          example: 200
+
+    Rules:
+      type: string
+      enum: [JAPANESE, CHINESE, KOREAN, AGA, TROMP_TAYLOR, NEW_ZEALAND, STONE_SCORING]
+
+    Stone:
+      type: object
+      required: [color, vertex]
+      additionalProperties: false
+      properties:
+        color:
+          $ref: "#/components/schemas/Color"
+        vertex:
+          type: string
+          pattern: "^[A-HJ-T][1-9][0-9]?$"
+          example: D4
+
+    AnalysisJobInput:
+      type: object
+      required: [profile_name, board_size, rules, komi, moves]
+      additionalProperties: false
+      properties:
+        profile_name:
+          type: string
+          example: winrate-v1
+        board_size:
+          type: integer
+          format: int32
+          minimum: 2
+          maximum: 19
+          example: 19
+        rules:
+          $ref: "#/components/schemas/Rules"
+        komi:
+          type: number
+          format: double
+          minimum: -150
+          maximum: 150
+          multipleOf: 0.5
+          example: 6.5
+        setup_stones:
+          type: array
+          description: Stones on the board before the first move, such as handicap stones.
+          maxItems: 361
+          items:
+            $ref: "#/components/schemas/Stone"
+        first_color:
+          $ref: "#/components/schemas/Color"
+          description: |
+            The side to play first. Only used when `moves` is empty; otherwise
+            it must match the first move. Defaults to `WHITE` when there are
+            setup stones and to `BLACK` otherwise.
+        moves:
+          type: array
+          maxItems: 1000
+          description: The game, in order. The profile's `max_moves` may be lower than 1000.
+          items:
+            $ref: "#/components/schemas/GameMove"
+
+    GameMove:
+      type: object
+      required: [color, vertex]
+      additionalProperties: false
+      properties:
+        color:
+          $ref: "#/components/schemas/Color"
+        vertex:
+          type: string
+          pattern: "^([A-HJ-T][1-9][0-9]?|PASS)$"
+          example: Q16
+
+    AnalysisJob:
+      type: object
+      required: [job_id, status, progress, created_at]
+      properties:
+        job_id:
+          type: string
+          description: An opaque id. Do not parse it.
+          example: 8b1e4f2a9c0d4e7b8a6c9d1e2f3a4b5c
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
+        progress:
+          $ref: "#/components/schemas/Progress"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-10-26T12:00:00Z"
+        started_at:
+          type: string
+          format: date-time
+          example: "2026-10-26T12:00:01Z"
+        finished_at:
+          type: string
+          format: date-time
+          example: "2026-10-26T12:01:30Z"
+        result:
+          $ref: "#/components/schemas/AnalysisResult"
+        error:
+          $ref: "#/components/schemas/Problem"
+          description: |
+            Why the job failed. Set only when `status` is `FAILED`. The
+            `type` and `status` are one of:
+            - `.../problems.md#illegal-move`, `400`: a move is not legal.
+              `field` names it, for example `moves[10]`.
+            - `#illegal-setup`, `400`: the setup stones are not legal.
+              `field` is `setup_stones`.
+            - `#engine-error`, `500`: the engine failed.
+            - `#analysis-timed-out`, `500`: the job ran too long.
+            - `#internal-error`, `500`: a bug in fastgtp.
+
+    Progress:
+      type: object
+      required: [done_positions, total_positions]
+      properties:
+        done_positions:
+          type: integer
+          format: int32
+          example: 120
+        total_positions:
+          type: integer
+          format: int32
+          description: The number of moves plus one, for the position before the first move.
+          example: 251
+
+    AnalysisResult:
+      type: object
+      description: Set only when `status` is `SUCCEEDED`.
+      required: [profile_name, conditions, positions]
+      properties:
+        profile_name:
+          type: string
+          example: winrate-v1
+        conditions:
+          $ref: "#/components/schemas/Conditions"
+        positions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PositionResult"
+
+    PositionResult:
+      type: object
+      required: [move_count, black_winrate]
+      properties:
+        move_count:
+          type: integer
+          format: int32
+          description: The position after this many moves. `0` is the position before the first move.
+          example: 0
+        black_winrate:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.47
+
+    Problem:
+      type: object
+      description: |
+        An RFC 9457 problem. `type` points to a section of `docs/problems.md`
+        in this repository.
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://github.com/ReiRev/fastgtp/blob/main/docs/problems.md#illegal-move
+        title:
+          type: string
+          example: Illegal move
+        status:
+          type: integer
+          format: int32
+          example: 409
+        detail:
+          type: string
+          example: D4 is already occupied.
+        field:
+          type: string
+          description: |
+            The part of the request the problem is about, when there is one,
+            for example `moves[10]` or `setup_stones`.
+          example: moves[10]
+        instance:
+          type: string
+          format: uri-reference
+
+  responses:
+    InvalidRequest:
+      description: |
+        The request is not valid, or the engine rejected its values. The
+        problem `type` is `.../problems.md#invalid-request`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    SessionNotFound:
+      description: |
+        There is no session with this id. The problem `type` is
+        `.../problems.md#session-not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    EngineError:
+      description: |
+        The engine failed, did not start, or gave an answer fastgtp could
+        not read. The problem `type` is `.../problems.md#engine-error`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Problem:
+      description: Any other error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    JobNotFound:
+      description: |
+        There is no job with this id. It may have been deleted, removed
+        after it finished, or lost in a restart. The problem `type` is
+        `.../problems.md#job-not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
