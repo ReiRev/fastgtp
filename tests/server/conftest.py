@@ -39,13 +39,13 @@ def client(app):
 
 @pytest.fixture(scope="session")
 def session_id(client):
-    res = client.post("/open_session")
+    res = client.post("/sessions")
     res.raise_for_status()
     session_id = res.json()["session_id"]
 
     yield session_id
 
-    client.post(f"/{session_id}/quit")
+    client.delete(f"/sessions/{session_id}")
 
 
 @pytest.fixture
