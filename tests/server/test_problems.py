@@ -112,7 +112,7 @@ def test_engine_exception_hides_stderr(client, session_id):
 def test_sgf_error_hides_temp_path(client, session_id):
     res = client.post(f"/{session_id}/sgf", json={"content": "(;SZ[99])"})
     body = assert_problem(res, 500, PROBLEMS + "engine-error")
-    assert body["detail"] == "cannot load 'the SGF'"
+    assert body["detail"] == "cannot load the SGF"
 
 
 def test_engine_that_does_not_start():

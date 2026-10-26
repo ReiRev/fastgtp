@@ -353,7 +353,10 @@ class FastGtp(APIRouter):
                 # Engines repeat the file name in their errors, and the
                 # server's temporary path must not reach the client.
                 raise ProblemError(
-                    exc.kind, exc.detail.replace(filename, "the SGF")
+                    exc.kind,
+                    exc.detail.replace(f"'{filename}'", "the SGF").replace(
+                        filename, "the SGF"
+                    ),
                 ) from exc
             finally:
                 try:
