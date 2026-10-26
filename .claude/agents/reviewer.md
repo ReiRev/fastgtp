@@ -19,11 +19,11 @@ If there is no concrete branch, commit or pull request to review, say so and sto
   4. Tests: changed behavior without a test, and tests that do not prove what their names claim.
   5. Comments and docs: a comment must explain why, not restate the code, and must be true.
   6. Public repository: the diff and the pull request description must not contain host names, IP addresses, home directory paths, people's names or details of anyone's infrastructure.
-  7. API guidelines: a change to the HTTP API follows `docs/api-guidelines.md`. Name the Zalando rule number for each finding. If `.spectral.yaml` exists, run `npx @stoplight/spectral-cli lint openapi.yaml`.
+  7. API guidelines: a change to the HTTP API follows `docs/api-guidelines.md`. Name the Zalando rule number for each finding. If `.spectral.yaml` exists, run `npx @stoplight/spectral-cli lint openapi.yaml`. This may download Spectral and its ruleset. That is the one allowed exception to the rule below about other hosts.
 
 ## How to check
 
-- Run the tests: `.venv/bin/pytest -q -k "gnugo or <area of the change>"`. The KataGo-parametrized tests need `/opt/katago` from the dev container. Deselecting them is expected when it is absent.
+- Run the tests: `poetry run pytest -q -k "gnugo or <area of the change>"`. The KataGo-parametrized tests need `/opt/katago` from the dev container. Deselecting them is expected when it is absent.
 - Run `uvx black --check` on the changed Python files.
 - Run the changed behavior, not only the tests. Use a stub or fake engine from `tests/` for engine behavior, and `uvicorn` on a free localhost port for HTTP behavior.
 - Do not use the GPU, do not start KataGo, and do not connect to other hosts.

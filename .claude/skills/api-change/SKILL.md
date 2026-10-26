@@ -10,7 +10,7 @@ description: Steps for any change to fastgtp's HTTP API, such as a new route, a 
 3. If `.spectral.yaml` exists, lint the spec: `npx @stoplight/spectral-cli lint openapi.yaml`. Fix every error.
 4. Show the spec change to the owner and wait for agreement. Do not answer a design question with code.
 5. Implement the routes to match the spec. Field names, status codes and error bodies must be the same as in the spec.
-6. For a new problem type, add a section to `docs/problems.md` and point its `type` URI there.
+6. For a new problem type, add a section to `docs/problems.md` (create the file if it is missing) and point its `type` URI there.
 7. Add tests for each new status code and error, not only the success path.
 8. Check that the app's generated OpenAPI (`/openapi.json`) matches the spec.
 

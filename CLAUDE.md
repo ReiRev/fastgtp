@@ -13,8 +13,8 @@ fastgtp wraps a Go Text Protocol (GTP) engine process in a FastAPI service.
 ## Commands
 
 ```bash
-poetry install                      # set up .venv
-.venv/bin/pytest -q -k "gnugo or transport"
+poetry install
+poetry run pytest -q -k "gnugo or transport"
 uvx black --check <changed files>
 ```
 
