@@ -306,7 +306,8 @@ components:
           description: |
             The SGF game record. If the engine rejects it, the answer is
             `400`. Some engines stop on SGF they cannot parse, which answers
-            `502`.
+            `502`. The session stays, and fastgtp starts its engine again
+            with an empty board on the next call.
           example: "(;GM[1]SZ[19]KM[6.5];B[pd];W[dp])"
         move_count:
           type: integer
