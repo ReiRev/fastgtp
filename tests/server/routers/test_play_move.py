@@ -11,7 +11,9 @@ def test_play_move(client, session_id):
 
 
 def test_play_move_invalid_session(client, invalid_session_id):
-    res = client.post(f"/{invalid_session_id}/play", json={"color": "B", "vertex": "D4"})
+    res = client.post(
+        f"/{invalid_session_id}/play", json={"color": "B", "vertex": "D4"}
+    )
     assert res.status_code == 404
 
 

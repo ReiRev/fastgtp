@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install GNU Go
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gnugo
+          # apt puts gnugo in /usr/games, which is not on the runner's PATH.
+          echo /usr/games >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: |
+          pipx install poetry==2.2.1
+          poetry install --no-interaction
+      # KataGo needs a GPU and the dev container, so CI runs only GNU Go and the fake engine.
+      - name: Test
+        run: poetry run pytest -q -k "not katago"
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pinned so a new black release does not fail pull requests that did not change.
+      - run: pipx run black==26.10.1 --check fastgtp tests
