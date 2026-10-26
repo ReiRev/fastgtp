@@ -19,6 +19,7 @@ If there is no concrete branch, commit or pull request to review, say so and sto
   4. Tests: changed behavior without a test, and tests that do not prove what their names claim.
   5. Comments and docs: a comment must explain why, not restate the code, and must be true.
   6. Public repository: the diff and the pull request description must not contain host names, IP addresses, home directory paths, people's names or details of anyone's infrastructure.
+  7. API guidelines: a change to the HTTP API follows `docs/api-guidelines.md`. Name the Zalando rule number for each finding. If `.spectral.yaml` exists, run `npx @stoplight/spectral-cli lint openapi.yaml`.
 
 ## How to check
 
