@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
-from fastgtp import GTPTransportManager, create_app
+from fastgtp import GTPTransportManager, SubprocessGTPTransport, create_app
 
 PROBLEMS = "https://github.com/ReiRev/fastgtp/blob/main/docs/problems.md#"
 SECRET = "stderr: secret path"
@@ -14,7 +16,7 @@ SECRET = "stderr: secret path"
 class FakeTransport:
     """Answers each command from a fixed table, without starting a process."""
 
-    def __init__(self, replies: dict[str, str | Exception]):
+    def __init__(self, replies: dict[str, Any]):
         self._replies = replies
 
     async def open(self) -> None:
@@ -30,6 +32,8 @@ class FakeTransport:
         reply = self._replies[command.split()[0]]
         if isinstance(reply, Exception):
             raise reply
+        if callable(reply):
+            return reply(command)
         return reply
 
 
@@ -42,6 +46,8 @@ def client():
             "get_komi": "= not a number\n\n",
             "version": RuntimeError(SECRET),
             "protocol_version": "garbage\n\n",
+            # GNU Go names the file it could not load.
+            "loadsgf": lambda command: f"? cannot load '{command.split()[1]}'\n\n",
         }
     )
     app = create_app(GTPTransportManager(transport))
@@ -99,7 +105,35 @@ def test_engine_failure_reply(client, session_id):
 
 def test_engine_exception_hides_stderr(client, session_id):
     res = client.get(f"/{session_id}/version")
-    assert_problem(res, 500, PROBLEMS + "engine-error")
+    body = assert_problem(res, 500, PROBLEMS + "engine-error")
+    assert body["detail"] == "The engine did not answer the command."
+
+
+def test_sgf_error_hides_temp_path(client, session_id):
+    res = client.post(f"/{session_id}/sgf", json={"content": "(;SZ[99])"})
+    body = assert_problem(res, 500, PROBLEMS + "engine-error")
+    assert body["detail"] == "cannot load 'the SGF'"
+
+
+def test_engine_that_does_not_start():
+    app = create_app(
+        GTPTransportManager(SubprocessGTPTransport("/nonexistent/engine --mode gtp"))
+    )
+    with TestClient(app, raise_server_exceptions=False) as c:
+        res = c.post("/open_session")
+    body = assert_problem(res, 500, PROBLEMS + "engine-error")
+    assert "nonexistent" not in res.text
+    assert body["detail"] == "The engine could not be started."
+
+
+def test_malformed_json_has_no_field(client, session_id):
+    res = client.post(
+        f"/{session_id}/play",
+        content='{"color": "B",',
+        headers={"content-type": "application/json"},
+    )
+    body = assert_problem(res, 400, PROBLEMS + "invalid-request")
+    assert "field" not in body
 
 
 def test_unreadable_reply(client, session_id):

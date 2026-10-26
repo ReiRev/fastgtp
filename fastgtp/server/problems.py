@@ -119,7 +119,13 @@ def install_problem_handlers(app: FastAPI) -> None:
             title=INVALID_REQUEST.title,
             status=INVALID_REQUEST.status,
             detail=str(first["msg"]),
-            field=_field_path(tuple(first["loc"])),
+            # For malformed JSON the location is an offset into the body, not
+            # a part of the request.
+            field=(
+                None
+                if first.get("type") == "json_invalid"
+                else _field_path(tuple(first["loc"]))
+            ),
         )
 
     async def http_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:

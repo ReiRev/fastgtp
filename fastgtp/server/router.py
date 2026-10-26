@@ -205,7 +205,13 @@ class FastGtp(APIRouter):
             transport_manager: GTPTransportManager = Depends(get_transport_manager),
         ) -> OpenSessionResponse:
             """Create a new session backed by a dedicated transport."""
-            session_id = await transport_manager.open_session()
+            try:
+                session_id = await transport_manager.open_session()
+            except Exception as exc:
+                logger.warning("Could not start the engine: %s", exc)
+                raise ProblemError(
+                    ENGINE_ERROR, "The engine could not be started."
+                ) from exc
             return OpenSessionResponse(session_id=session_id)
 
         @self.get("/{session_id}/name")
@@ -343,6 +349,12 @@ class FastGtp(APIRouter):
             try:
                 payload = await self._query("loadsgf", transport, arguments=args)
                 return LoadSgfResponse(detail=payload)
+            except ProblemError as exc:
+                # Engines repeat the file name in their errors, and the
+                # server's temporary path must not reach the client.
+                raise ProblemError(
+                    exc.kind, exc.detail.replace(filename, "the SGF")
+                ) from exc
             finally:
                 try:
                     os.remove(filename)
