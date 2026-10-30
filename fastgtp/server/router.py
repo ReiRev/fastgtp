@@ -12,8 +12,10 @@ import os
 import re
 import tempfile
 from contextlib import asynccontextmanager
+from importlib.resources import files
 from typing import Any, AsyncIterator, Literal, Sequence
 
+import yaml
 from fastapi import APIRouter, Depends, FastAPI, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -32,6 +34,11 @@ from .problems import (
 from .transport import GTPTransport, GTPTransportManager, TooManySessionsError
 
 logger = logging.getLogger(__name__)
+
+# The spec is the contract, so the app serves it as its OpenAPI document
+# instead of the one FastAPI would generate. It lives in the package so that an
+# installed fastgtp has it too; openapi.yaml at the repository root links here.
+SPEC = files("fastgtp") / "openapi.yaml"
 
 Color = Literal["BLACK", "WHITE"]
 _GTP_COLORS = {"BLACK": "B", "WHITE": "W"}
@@ -368,6 +375,7 @@ def create_app(
             await transport_manager.close_all()
 
     app = FastAPI(title="fastgtp", lifespan=lifespan, **app_kwargs)
+    _serve_spec(app)
     install_problem_handlers(app)
     fastgtp_router = FastGtp(retry_after_seconds=retry_after_seconds, **router_kwargs)
     app.include_router(fastgtp_router)
@@ -378,3 +386,18 @@ def create_app(
     app.dependency_overrides[get_transport_manager] = override_get_manager
 
     return app
+
+
+def _serve_spec(app: FastAPI) -> None:
+    # No fallback to the generated document: it differs from the spec in its
+    # error responses, and serving it quietly would hide a missing file.
+    spec = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+
+    def openapi() -> dict[str, Any]:
+        # FastAPI adds the proxy's root path to app.servers before it asks for
+        # the document. Without it, /docs would send requests past the prefix.
+        if app.servers and "servers" not in spec:
+            return {**spec, "servers": app.servers}
+        return spec
+
+    app.openapi = openapi  # type: ignore[method-assign]

@@ -12,6 +12,6 @@ description: Steps for any change to fastgtp's HTTP API, such as a new route, a 
 5. Implement the routes to match the spec. Field names, status codes and error bodies must be the same as in the spec.
 6. For a new problem type, add a section to `docs/problems.md` (create the file if it is missing) and point its `type` URI there.
 7. Add tests for each new status code and error, not only the success path.
-8. Check that the app's generated OpenAPI (`/openapi.json`) matches the spec.
+8. The app serves `openapi.yaml` as `/openapi.json`, so the served document is always the spec, and it cannot show where the code differs. `tests/server/test_spec.py` checks only that the app's paths and methods are the ones the spec lists. When you build a path that is in the spec, remove it from `NOT_YET_BUILT` there. Fields and status codes are checked only by the route tests from step 7, so write them for the success path too.
 
 If a change needs a rule from the "Rules we skip" table, or breaks a rule we follow, ask the owner. If they agree, update `docs/api-guidelines.md` in the same pull request.
