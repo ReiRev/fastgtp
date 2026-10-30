@@ -83,7 +83,7 @@ The routes under `/katago` (`fastgtp/katago/openapi.yaml`) only work with KataGo
 
 | Rule | In the KataGo extension |
 | --- | --- |
-| #118 (snake_case) | Properties are KataGo's camelCase names, such as `boardXSize` and `moveInfos`. |
+| #118 (snake_case) | Properties are KataGo's camelCase names, such as `boardXSize` and `moveInfos`. The few fields fastgtp adds, such as `createdAt`, are camelCase too, so one body does not mix two styles. |
 | #240 (UPPER_SNAKE_CASE enums) | Players are `B` and `W`, and rules names are KataGo's, such as `tromp-taylor`. |
 | #134 (plural nouns) | `/katago/{katago_id}` names one KataGo, as `/katagos` would read badly. |
 

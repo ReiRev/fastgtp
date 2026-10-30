@@ -16,9 +16,8 @@ info:
 
     The server can run several KataGo analysis engines, each started with
     its own config and model. `GET /katago` lists them, and the routes under
-    `/katago/{katago_id}` work as that one KataGo. The same query to the
-    same KataGo gives the same responses as long as its `version` and
-    `models` do not change.
+    `/katago/{katago_id}` work as that one KataGo. KataGo does not promise
+    the same numbers for the same query, so two runs may differ slightly.
   contact:
     name: fastgtp
     url: https://github.com/ReiRev/fastgtp
@@ -40,7 +39,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/KataGoList"
         default:
-          $ref: "#/components/responses/Problem"
+          $ref: "#/components/responses/KataGoProblem"
 
   /katago/{katago_id}/version:
     parameters:
@@ -55,11 +54,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Version"
+                $ref: "#/components/schemas/KataGoVersion"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/KataGoNotFound"
         default:
-          $ref: "#/components/responses/Problem"
+          $ref: "#/components/responses/KataGoProblem"
 
   /katago/{katago_id}/models:
     parameters:
@@ -74,11 +73,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ModelList"
+                $ref: "#/components/schemas/KataGoModelList"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/KataGoNotFound"
         default:
-          $ref: "#/components/responses/Problem"
+          $ref: "#/components/responses/KataGoProblem"
 
   /katago/{katago_id}/queries:
     parameters:
@@ -90,15 +89,16 @@ paths:
         Queues an analysis query. Poll it at `Location` until its status is
         `SUCCEEDED` or `FAILED`.
 
-        fastgtp checks only its own limits and the fields it does not
-        accept. KataGo checks everything else; a query that KataGo rejects
-        ends as `FAILED` with KataGo's error.
+        fastgtp checks the query against this schema and its own limits,
+        and answers `400` when it fails. KataGo checks the game itself, such
+        as locations, legal moves, rules names and turn numbers; a query
+        that KataGo rejects ends as `FAILED` with KataGo's error.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/QueryInput"
+              $ref: "#/components/schemas/KataGoQueryInput"
       responses:
         "201":
           description: The query was queued.
@@ -108,22 +108,23 @@ paths:
               schema:
                 type: string
             Retry-After:
-              $ref: "#/components/headers/PollAfter"
+              $ref: "#/components/headers/KataGoPollAfter"
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Query"
+                $ref: "#/components/schemas/KataGoQuery"
         "400":
           description: |
-            The body is not JSON, has a field fastgtp does not accept, or
-            goes over a limit of the server, such as `maxVisits`. The
-            problem `type` is `.../problems.md#invalid-request`.
+            The body does not match the schema, for example it has an
+            unknown field or a wrong type, or it goes over a limit of the
+            server, such as `maxVisits`. The problem `type` is
+            `.../problems.md#invalid-request`.
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: "#/components/schemas/KataGoProblem"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/KataGoNotFound"
         "503":
           description: |
             The queue is full. Try again after `Retry-After`. The problem
@@ -137,14 +138,14 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: "#/components/schemas/KataGoProblem"
         default:
-          $ref: "#/components/responses/Problem"
+          $ref: "#/components/responses/KataGoProblem"
 
   /katago/{katago_id}/queries/{query_id}:
     parameters:
       - $ref: "#/components/parameters/KataGoId"
-      - $ref: "#/components/parameters/QueryId"
+      - $ref: "#/components/parameters/KataGoQueryId"
     get:
       operationId: getKataGoQuery
       summary: Read a query
@@ -158,15 +159,15 @@ paths:
           description: The query.
           headers:
             Retry-After:
-              $ref: "#/components/headers/PollAfter"
+              $ref: "#/components/headers/KataGoPollAfter"
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Query"
+                $ref: "#/components/schemas/KataGoQuery"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/KataGoNotFound"
         default:
-          $ref: "#/components/responses/Problem"
+          $ref: "#/components/responses/KataGoProblem"
     delete:
       operationId: deleteKataGoQuery
       summary: Delete a query
@@ -177,9 +178,9 @@ paths:
         "204":
           description: The query was removed.
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/KataGoNotFound"
         default:
-          $ref: "#/components/responses/Problem"
+          $ref: "#/components/responses/KataGoProblem"
 
 components:
   parameters:
@@ -191,7 +192,7 @@ components:
       schema:
         type: string
       example: default
-    QueryId:
+    KataGoQueryId:
       name: query_id
       in: path
       required: true
@@ -200,7 +201,7 @@ components:
         type: string
 
   headers:
-    PollAfter:
+    KataGoPollAfter:
       description: |
         Seconds to wait before reading the query again. Sent while the
         query is `QUEUED` or `RUNNING`.
@@ -230,7 +231,7 @@ components:
             a new name.
           example: default
 
-    Version:
+    KataGoVersion:
       type: object
       required: [version, git_hash]
       properties:
@@ -241,16 +242,16 @@ components:
           type: string
           example: 0b0c29750fd351a8364440a2c9c83dc50195c05b
 
-    ModelList:
+    KataGoModelList:
       type: object
       required: [models]
       properties:
         models:
           type: array
           items:
-            $ref: "#/components/schemas/Model"
+            $ref: "#/components/schemas/KataGoModel"
 
-    Model:
+    KataGoModel:
       type: object
       description: One entry of `query_models`. KataGo may add fields.
       required: [name, internalName, maxBatchSize, usesHumanSLProfile, version, usingFP16]
@@ -275,22 +276,22 @@ components:
           type: string
           example: auto
 
-    Player:
+    KataGoPlayer:
       type: string
       description: KataGo also accepts lower case.
       enum: [B, W, b, w]
 
-    Move:
+    KataGoMove:
       type: array
       description: A player and a location, as in `["B", "Q16"]`. The location may be `pass`.
       prefixItems:
-        - $ref: "#/components/schemas/Player"
+        - $ref: "#/components/schemas/KataGoPlayer"
         - type: string
           example: Q16
       minItems: 2
       maxItems: 2
 
-    QueryInput:
+    KataGoQueryInput:
       type: object
       description: |
         A query of KataGo's analysis engine, without `id`. fastgtp gives the
@@ -308,14 +309,14 @@ components:
           type: array
           maxItems: 1000
           items:
-            $ref: "#/components/schemas/Move"
+            $ref: "#/components/schemas/KataGoMove"
         initialStones:
           type: array
           maxItems: 361
           items:
-            $ref: "#/components/schemas/Move"
+            $ref: "#/components/schemas/KataGoMove"
         initialPlayer:
-          $ref: "#/components/schemas/Player"
+          $ref: "#/components/schemas/KataGoPlayer"
         rules:
           description: A rules name such as `japanese` or `tromp-taylor`, or a full rules object.
           oneOf:
@@ -393,7 +394,7 @@ components:
           type: number
           format: double
 
-    Query:
+    KataGoQuery:
       type: object
       required: [id, status, query, responses, warnings, createdAt]
       properties:
@@ -404,25 +405,30 @@ components:
         status:
           type: string
           description: |
-            `SUCCEEDED` when KataGo has sent the final response for every
-            turn, `FAILED` when it rejected the query or stopped.
+            `SUCCEEDED` when every turn finished its search. `FAILED` when
+            KataGo rejected the query, KataGo stopped, or the query ran
+            longer than the server allows; fastgtp then stops it with the
+            `terminate` action.
           enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
         query:
-          $ref: "#/components/schemas/QueryInput"
+          $ref: "#/components/schemas/KataGoQueryInput"
         responses:
           type: array
           description: |
-            KataGo's final responses so far, one per analyzed turn, in
-            increasing `turnNumber`. Each `id` is this query's `id`.
+            KataGo's final responses so far, at most one per analyzed turn,
+            in increasing `turnNumber`. Each `id` is this query's `id`. In a
+            query stopped with `terminate`, a turn stopped mid-search has
+            fewer visits than asked, and a turn KataGo had not started has
+            no response.
           items:
-            $ref: "#/components/schemas/Response"
+            $ref: "#/components/schemas/KataGoResponse"
         warnings:
           type: array
           description: KataGo's warnings for this query. The query still runs.
           items:
-            $ref: "#/components/schemas/Message"
+            $ref: "#/components/schemas/KataGoMessage"
         error:
-          $ref: "#/components/schemas/Message"
+          $ref: "#/components/schemas/KataGoMessage"
           description: |
             Why the query failed. Set only when `status` is `FAILED`. It is
             KataGo's error when KataGo rejected the query, for example
@@ -442,7 +448,7 @@ components:
           format: date-time
           example: "2026-10-26T12:01:30Z"
 
-    Message:
+    KataGoMessage:
       type: object
       description: An error or a warning, as KataGo writes them.
       properties:
@@ -455,11 +461,12 @@ components:
           type: string
           example: moves
 
-    Response:
+    KataGoResponse:
       type: object
       description: |
-        One response of KataGo's analysis engine. Winrates, scores and
-        ownership are from Black's point of view. KataGo may add fields.
+        One response of KataGo's analysis engine. fastgtp starts KataGo with
+        `reportAnalysisWinratesAs=BLACK`, so winrates, scores and ownership
+        are from Black's point of view. KataGo may add fields.
       required: [id, turnNumber, isDuringSearch, moveInfos, rootInfo]
       properties:
         id:
@@ -473,9 +480,9 @@ components:
         moveInfos:
           type: array
           items:
-            $ref: "#/components/schemas/MoveInfo"
+            $ref: "#/components/schemas/KataGoMoveInfo"
         rootInfo:
-          $ref: "#/components/schemas/RootInfo"
+          $ref: "#/components/schemas/KataGoRootInfo"
         ownership:
           type: array
           items:
@@ -492,12 +499,12 @@ components:
             type: number
             format: double
 
-    RootInfo:
+    KataGoRootInfo:
       type: object
       required: [currentPlayer, winrate, scoreLead, visits]
       properties:
         currentPlayer:
-          $ref: "#/components/schemas/Player"
+          $ref: "#/components/schemas/KataGoPlayer"
         winrate:
           type: number
           format: double
@@ -521,7 +528,7 @@ components:
         symHash:
           type: string
 
-    MoveInfo:
+    KataGoMoveInfo:
       type: object
       required: [move, order, visits, winrate, scoreLead, prior, pv]
       properties:
@@ -567,7 +574,7 @@ components:
             type: string
           example: [Q16, D4, Q3]
 
-    Problem:
+    KataGoProblem:
       type: object
       description: |
         An RFC 9457 problem, the same as in the main document. `type` points
@@ -595,13 +602,13 @@ components:
           format: uri-reference
 
   responses:
-    Problem:
+    KataGoProblem:
       description: Any other error.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
-    NotFound:
+            $ref: "#/components/schemas/KataGoProblem"
+    KataGoNotFound:
       description: |
         There is no KataGo with this name, or no query with this id. The
         query may have been deleted, removed after it finished, or lost in
@@ -610,4 +617,4 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: "#/components/schemas/KataGoProblem"

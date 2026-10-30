@@ -10,9 +10,6 @@ info:
     the engine process stops.
 
     Requests to one session run one at a time, in the order they arrive.
-
-    When the server is configured with KataGo, this document also lists
-    the routes of the KataGo extension, under `/katago`.
   contact:
     name: fastgtp
     url: https://github.com/ReiRev/fastgtp
