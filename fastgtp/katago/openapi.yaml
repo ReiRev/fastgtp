@@ -407,8 +407,8 @@ components:
           description: |
             `SUCCEEDED` when every turn finished its search. `FAILED` when
             KataGo rejected the query, KataGo stopped, or the query ran
-            longer than the server allows; fastgtp then stops it with the
-            `terminate` action.
+            longer than the server allows. In the last case fastgtp stops
+            the query with the `terminate` action.
           enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
         query:
           $ref: "#/components/schemas/KataGoQueryInput"
