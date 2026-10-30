@@ -9,3 +9,10 @@ rules:
   must-have-info-x-api-id: off # 215
   must-provide-api-audience: off # 219
   must-have-info-contact-email: off # 218, contact email
+# The KataGo extension keeps KataGo's own names and values (camelCase, "B"
+# and "W"), as docs/api-guidelines.md explains.
+overrides:
+  - files: ["fastgtp/katago/openapi.yaml"]
+    rules:
+      must-use-snake-case-for-property-names: off # 118
+      should-declare-enum-values-using-upper-snake-case-format: off # 240

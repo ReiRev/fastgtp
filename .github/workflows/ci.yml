@@ -48,4 +48,4 @@ jobs:
         with:
           node-version: "22"
       # Fails on errors only. Warnings are shown but do not fail the job.
-      - run: npx -y @stoplight/spectral-cli@6.15.0 lint openapi.yaml
+      - run: npx -y @stoplight/spectral-cli@6.15.0 lint openapi.yaml fastgtp/katago/openapi.yaml

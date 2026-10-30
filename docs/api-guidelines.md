@@ -22,7 +22,7 @@ Run it locally with `npx @stoplight/spectral-cli@6.15.0 lint openapi.yaml`.
 
 ### URLs
 
-- [#134](https://opensource.zalando.com/restful-api-guidelines/#134), [#129](https://opensource.zalando.com/restful-api-guidelines/#129), [#136](https://opensource.zalando.com/restful-api-guidelines/#136): Plural nouns, kebab-case, no trailing slash. For example `/analysis-jobs`.
+- [#134](https://opensource.zalando.com/restful-api-guidelines/#134), [#129](https://opensource.zalando.com/restful-api-guidelines/#129), [#136](https://opensource.zalando.com/restful-api-guidelines/#136): Plural nouns, kebab-case, no trailing slash. For example `/sessions`.
 - [#141](https://opensource.zalando.com/restful-api-guidelines/#141), [#138](https://opensource.zalando.com/restful-api-guidelines/#138): No verbs in URLs. A GTP command becomes a resource (see below).
 - [#135](https://opensource.zalando.com/restful-api-guidelines/#135): No `/api` prefix.
 - [#143](https://opensource.zalando.com/restful-api-guidelines/#143), [#147](https://opensource.zalando.com/restful-api-guidelines/#147): Sub-resources by path, at most two levels.
@@ -56,11 +56,11 @@ Run it locally with `npx @stoplight/spectral-cli@6.15.0 lint openapi.yaml`.
 
 ### Long-running work
 
-- [#253](https://opensource.zalando.com/restful-api-guidelines/#253): Use a job resource. `POST /analysis-jobs` answers `201` with `Location`. `GET /analysis-jobs/{id}` returns the status and, when done, the result.
+- [#253](https://opensource.zalando.com/restful-api-guidelines/#253): Use a job resource. `POST /katago/{katago_id}/queries` answers `201` with `Location`. `GET /katago/{katago_id}/queries/{query_id}` returns the status and, when done, the result.
 
 ### Lists
 
-- [#159](https://opensource.zalando.com/restful-api-guidelines/#159), [#160](https://opensource.zalando.com/restful-api-guidelines/#160), [#254](https://opensource.zalando.com/restful-api-guidelines/#254): A list that can grow uses cursor pagination and no total count. A short, fixed list, such as profiles, does not need pagination.
+- [#159](https://opensource.zalando.com/restful-api-guidelines/#159), [#160](https://opensource.zalando.com/restful-api-guidelines/#160), [#254](https://opensource.zalando.com/restful-api-guidelines/#254): A list that can grow uses cursor pagination and no total count. A short, fixed list, such as the loaded KataGo models, does not need pagination.
 
 ## Rules we skip
 
@@ -76,6 +76,18 @@ Run it locally with `npx @stoplight/spectral-cli@6.15.0 lint openapi.yaml`.
 | #163 to #166, #217 (hypermedia links, absolute URIs) | Not needed. `Location` may be relative, as RFC 9110 allows. |
 | #112 (open-ended enums) | Our enums are closed. A new value is a new spec version. |
 | #229, #231, #230 (idempotent `POST`, `Idempotency-Key`) | Not used for now. Clients resubmit a job when unsure. |
+
+## The KataGo extension
+
+The routes under `/katago` (`fastgtp/katago/openapi.yaml`) only work with KataGo, so they keep the names and formats of KataGo's [analysis engine](https://github.com/lightvector/KataGo/blob/master/docs/Analysis_Engine.md). A KataGo user can then read them without learning a second vocabulary, and fastgtp passes queries and responses through with few changes. They break these rules on purpose:
+
+| Rule | In the KataGo extension |
+| --- | --- |
+| #118 (snake_case) | Properties are KataGo's camelCase names, such as `boardXSize` and `moveInfos`. |
+| #240 (UPPER_SNAKE_CASE enums) | Players are `B` and `W`, and rules names are KataGo's, such as `tromp-taylor`. |
+| #134 (plural nouns) | `/katago/{katago_id}` names one KataGo, as `/katagos` would read badly. |
+
+The other rules still apply. HTTP errors are problem JSON; only a failed query's `error` uses KataGo's error object, because it is KataGo's answer. `.spectral.yaml` turns the two rules off for that file only.
 
 ## GTP in resource form
 
