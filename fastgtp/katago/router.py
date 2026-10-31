@@ -7,7 +7,7 @@ from typing import Any, Literal, Mapping
 
 from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt
 
 from fastgtp.katago.queries import KataGoQueries, QueueFullError
 from fastgtp.server.problems import (
@@ -24,22 +24,22 @@ KataGoMove = tuple[Player, str]
 
 class KataGoQueryInput(BaseModel):
     # The field names are KataGo's, so the extension keeps them in camelCase.
-    # Integers and booleans are strict, so that "19" or true is not turned
-    # into a number the client did not send.
+    # Numbers and booleans are strict, so that "19" or true is not turned
+    # into a value the client did not send.
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     moves: list[KataGoMove] = Field(max_length=1000)
     initialStones: list[KataGoMove] | None = Field(None, max_length=361)
     initialPlayer: Player | None = None
     rules: str | dict[str, Any]
-    komi: float | None = None
+    komi: StrictFloat | None = None
     whiteHandicapBonus: Literal["0", "N", "N-1"] | None = None
     boardXSize: StrictInt
     boardYSize: StrictInt
     analyzeTurns: list[StrictInt] | None = Field(None, min_length=1, max_length=1001)
     maxVisits: StrictInt | None = None
-    rootPolicyTemperature: float | None = None
-    rootFpuReductionMax: float | None = None
+    rootPolicyTemperature: StrictFloat | None = None
+    rootFpuReductionMax: StrictFloat | None = None
     analysisPVLen: StrictInt | None = None
     includeOwnership: StrictBool | None = None
     includeOwnershipStdev: StrictBool | None = None
@@ -51,8 +51,8 @@ class KataGoQueryInput(BaseModel):
     avoidMoves: list[dict[str, Any]] | None = None
     allowMoves: list[dict[str, Any]] | None = None
     focusMoves: list[str] | None = None
-    focusWeights: list[float] | None = None
-    focusProb: float | None = None
+    focusWeights: list[StrictFloat] | None = None
+    focusProb: StrictFloat | None = None
 
 
 class KataGoRouter(APIRouter):

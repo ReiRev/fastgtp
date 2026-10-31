@@ -110,6 +110,7 @@ def test_invalid_queries_are_400():
             ({**QUERY, "maxVisits": 101}, "maxVisits"),
             ({**QUERY, "boardXSize": "9"}, "boardXSize"),
             ({**QUERY, "includeOwnership": "yes"}, "includeOwnership"),
+            ({**QUERY, "komi": True}, "komi"),
         ]:
             res = c.post(f"{BASE}/queries", json=body)
             assert assert_problem(res, 400, "invalid-request")["field"] == field
@@ -162,6 +163,11 @@ def test_stuck_terminate_still_frees_the_slot(monkeypatch):
         stuck = c.post(f"{BASE}/queries", json=SLOW).headers["location"]
         deleted = c.post(f"{BASE}/queries", json=SLOW).headers["location"]
         assert wait(c, stuck)["status"] == "FAILED"
+        # Deleting a running query also sends terminate, and must not hang.
+        deadline = time.monotonic() + 10
+        while c.get(deleted).json()["status"] != "RUNNING":
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
         assert c.delete(deleted).status_code == 204
 
 

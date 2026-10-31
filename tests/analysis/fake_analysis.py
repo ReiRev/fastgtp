@@ -46,7 +46,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--argv-file")
     parser.add_argument("--exit-after-queries", type=int, default=0)
-    # Like a KataGo stuck in a GPU call, which reads no more input.
+    # Ignore terminate, as a stuck KataGo would. Other input is still read.
     parser.add_argument("--ignore-terminate", action="store_true")
     args, rest = parser.parse_known_args()
     if args.argv_file:
