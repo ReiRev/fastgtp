@@ -258,6 +258,9 @@ components:
       properties:
         name:
           type: string
+          description: |
+            The model file's name. fastgtp leaves out the directory, which
+            KataGo reports as configured.
           example: kata1-b18c384nbt-s9732312320-d4245566942.bin.gz
         internalName:
           type: string
