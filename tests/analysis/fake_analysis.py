@@ -46,6 +46,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--argv-file")
     parser.add_argument("--exit-after-queries", type=int, default=0)
+    # Ignore terminate, as a stuck KataGo would. Other input is still read.
+    parser.add_argument("--ignore-terminate", action="store_true")
     args, rest = parser.parse_known_args()
     if args.argv_file:
         with open(args.argv_file, "w") as f:
@@ -62,6 +64,8 @@ def main() -> None:
             write({**message, "version": "1.0.0", "git_hash": "fake"})
         elif action == "query_models":
             write({**message, "models": [MODEL]})
+        elif action == "terminate" and args.ignore_terminate:
+            continue
         elif action == "terminate":
             write(message)
             turns = searching.pop(message["terminateId"], [])

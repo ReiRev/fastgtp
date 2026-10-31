@@ -343,7 +343,10 @@ components:
           example: 19
         analyzeTurns:
           type: array
-          description: Defaults to the last turn only, as in KataGo.
+          description: |
+            Defaults to the last turn only, as in KataGo. It may not be empty,
+            because KataGo answers an empty list with nothing.
+          minItems: 1
           maxItems: 1001
           items:
             type: integer
