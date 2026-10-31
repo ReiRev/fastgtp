@@ -7,7 +7,7 @@ from typing import Any, Literal, Mapping
 
 from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from fastgtp.katago.queries import KataGoQueries, QueueFullError
 from fastgtp.server.problems import (
@@ -24,6 +24,8 @@ KataGoMove = tuple[Player, str]
 
 class KataGoQueryInput(BaseModel):
     # The field names are KataGo's, so the extension keeps them in camelCase.
+    # Integers and booleans are strict, so that "19" or true is not turned
+    # into a number the client did not send.
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     moves: list[KataGoMove] = Field(max_length=1000)
@@ -32,20 +34,20 @@ class KataGoQueryInput(BaseModel):
     rules: str | dict[str, Any]
     komi: float | None = None
     whiteHandicapBonus: Literal["0", "N", "N-1"] | None = None
-    boardXSize: int
-    boardYSize: int
-    analyzeTurns: list[int] | None = Field(None, min_length=1, max_length=1001)
-    maxVisits: int | None = None
+    boardXSize: StrictInt
+    boardYSize: StrictInt
+    analyzeTurns: list[StrictInt] | None = Field(None, min_length=1, max_length=1001)
+    maxVisits: StrictInt | None = None
     rootPolicyTemperature: float | None = None
     rootFpuReductionMax: float | None = None
-    analysisPVLen: int | None = None
-    includeOwnership: bool | None = None
-    includeOwnershipStdev: bool | None = None
-    includeMovesOwnership: bool | None = None
-    includeMovesOwnershipStdev: bool | None = None
-    includePolicy: bool | None = None
-    includePVVisits: bool | None = None
-    includeNoResultValue: bool | None = None
+    analysisPVLen: StrictInt | None = None
+    includeOwnership: StrictBool | None = None
+    includeOwnershipStdev: StrictBool | None = None
+    includeMovesOwnership: StrictBool | None = None
+    includeMovesOwnershipStdev: StrictBool | None = None
+    includePolicy: StrictBool | None = None
+    includePVVisits: StrictBool | None = None
+    includeNoResultValue: StrictBool | None = None
     avoidMoves: list[dict[str, Any]] | None = None
     allowMoves: list[dict[str, Any]] | None = None
     focusMoves: list[str] | None = None
@@ -93,7 +95,9 @@ class KataGoRouter(APIRouter):
         @self.post("/katago/{katago_id}/queries", status_code=201)
         async def create_query(katago_id: str, body: KataGoQueryInput):
             queries = katago(katago_id)
-            query = body.model_dump(exclude_unset=True)
+            # A field set to null means the same as a missing one, and KataGo
+            # would reject null.
+            query = body.model_dump(exclude_none=True)
             if queries.max_visits is not None and body.maxVisits is not None:
                 if body.maxVisits > queries.max_visits:
                     raise ProblemError(

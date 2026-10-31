@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fastgtp.katago.engine import KataGoEngine
+from fastgtp.katago import queries as queries_module
 from fastgtp.katago.queries import KataGoQueries
 from fastgtp.katago.router import KataGoRouter
 from fastgtp.server.problems import install_problem_handlers
@@ -65,7 +66,14 @@ def test_list_version_and_models():
         assert c.get("/katago").json() == {"items": [{"id": "default"}]}
         assert c.get(f"{BASE}/version").json()["version"] == "1.0.0"
         assert c.get(f"{BASE}/models").json()["models"][0]["name"] == "fake.bin.gz"
-        assert_problem(c.get("/katago/other/version"), 404, "katago-not-found")
+        for res in (
+            c.get("/katago/other/version"),
+            c.get("/katago/other/models"),
+            c.post("/katago/other/queries", json=QUERY),
+            c.get("/katago/other/queries/x"),
+            c.delete("/katago/other/queries/x"),
+        ):
+            assert_problem(res, 404, "katago-not-found")
 
 
 def test_query_succeeds():
@@ -77,6 +85,10 @@ def test_query_succeeds():
         assert res.headers["location"] == f"{BASE}/queries/{created['id']}"
         assert created["status"] in ("QUEUED", "RUNNING")
         assert created["query"] == {**QUERY, "analyzeTurns": [0, 2, 1]}
+
+        # null means the same as a missing field.
+        with_null = c.post(f"{BASE}/queries", json={**QUERY, "komi": None})
+        assert with_null.json()["query"] == QUERY
 
         body = wait(c, res.headers["location"])
         assert body["status"] == "SUCCEEDED"
@@ -96,6 +108,8 @@ def test_invalid_queries_are_400():
             ({**QUERY, "analyzeTurns": []}, "analyzeTurns"),
             ({**QUERY, "moves": [["X", "E5"]]}, "moves[0][0]"),
             ({**QUERY, "maxVisits": 101}, "maxVisits"),
+            ({**QUERY, "boardXSize": "9"}, "boardXSize"),
+            ({**QUERY, "includeOwnership": "yes"}, "includeOwnership"),
         ]:
             res = c.post(f"{BASE}/queries", json=body)
             assert assert_problem(res, 400, "invalid-request")["field"] == field
@@ -122,7 +136,9 @@ def test_full_queue_is_503():
     with client(max_queued=1) as c:
         first = c.post(f"{BASE}/queries", json=SLOW).headers["location"]
         # Wait until the first runs, so the second is the only one queued.
+        deadline = time.monotonic() + 10
         while c.get(first).json()["status"] == "QUEUED":
+            assert time.monotonic() < deadline
             time.sleep(0.02)
         assert c.post(f"{BASE}/queries", json=SLOW).json()["status"] == "QUEUED"
         res = c.post(f"{BASE}/queries", json=SLOW)
@@ -138,6 +154,15 @@ def test_query_that_runs_too_long_is_terminated():
         assert body["error"]["error"] == "The query ran longer than the server allows."
         # The turn being searched kept what it found.
         assert len(body["responses"]) == 1
+
+
+def test_stuck_terminate_still_frees_the_slot(monkeypatch):
+    monkeypatch.setattr(queries_module, "_TERMINATE_WAIT_SECONDS", 0.2)
+    with client("--ignore-terminate", timeout_seconds=0.2) as c:
+        stuck = c.post(f"{BASE}/queries", json=SLOW).headers["location"]
+        deleted = c.post(f"{BASE}/queries", json=SLOW).headers["location"]
+        assert wait(c, stuck)["status"] == "FAILED"
+        assert c.delete(deleted).status_code == 204
 
 
 def test_delete_frees_the_slot():

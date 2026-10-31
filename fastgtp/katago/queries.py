@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 TIMED_OUT_ERROR = {"error": "The query ran longer than the server allows."}
 NOT_STARTED_ERROR = {"error": "KataGo could not be started."}
-# How long a terminated query may take to send its last lines.
+# How long KataGo may take to acknowledge terminate and send the query's last
+# lines. A KataGo that is stuck must not hold the slot forever.
 _TERMINATE_WAIT_SECONDS = 30.0
 
 
@@ -37,6 +38,7 @@ class Query:
         self.error: dict[str, Any] | None = None
         self.deleted = False
         self.task: asyncio.Task[None] | None = None
+        self.removal: asyncio.TimerHandle | None = None
 
     @property
     def finished(self) -> bool:
@@ -114,10 +116,15 @@ class KataGoQueries:
 
     async def aclose(self) -> None:
         """Cancel every query's task. The engine is closed by its owner."""
-        for item in self._queries.values():
-            if item.task is not None:
-                item.task.cancel()
+        items = list(self._queries.values())
         self._queries.clear()
+        tasks = [item.task for item in items if item.task is not None]
+        for item in items:
+            if item.removal is not None:
+                item.removal.cancel()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run(self, item: Query) -> None:
         async with self._slots:
@@ -149,17 +156,20 @@ class KataGoQueries:
         item.status = "FAILED" if error is not None else "SUCCEEDED"
         item.finished_at = _now()
         if not item.deleted:
-            asyncio.get_running_loop().call_later(
+            item.removal = asyncio.get_running_loop().call_later(
                 self._keep, self._queries.pop, item.id, None
             )
 
     async def _terminate(self, running: RunningQuery) -> None:
         # The query keeps its slot until KataGo has really stopped it, so the
         # next query does not run beside it.
-        with contextlib.suppress(KataGoError):
-            await self.engine.terminate(running)
+        async def stop() -> None:
+            with contextlib.suppress(KataGoError):
+                await self.engine.terminate(running)
+            await running.done.wait()
+
         with contextlib.suppress(asyncio.TimeoutError):
-            await asyncio.wait_for(running.done.wait(), _TERMINATE_WAIT_SECONDS)
+            await asyncio.wait_for(stop(), _TERMINATE_WAIT_SECONDS)
 
 
 def _now() -> str:
