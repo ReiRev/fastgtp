@@ -208,3 +208,23 @@ def test_close_fails_open_queries():
 
     running = asyncio.run(asyncio.wait_for(scenario(), WAIT))
     assert running.error == STOPPED_ERROR
+
+
+def test_reader_failure_stops_and_restarts():
+    async def scenario(e):
+        slow = await e.submit({**QUERY, "maxVisits": 1_000_000})
+        route = e._route
+
+        def broken(message):
+            e._route = route
+            raise RuntimeError("broken")
+
+        e._route = broken
+        failed = await finish(e, QUERY)
+        await slow.done.wait()
+        return slow, failed, await finish(e, QUERY)
+
+    slow, failed, after = run(scenario)
+    assert slow.error == STOPPED_ERROR
+    assert failed.error == STOPPED_ERROR
+    assert after.error is None and len(after.responses) == 1
