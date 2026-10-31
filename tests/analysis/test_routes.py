@@ -93,6 +93,8 @@ def test_query_succeeds():
         body = wait(c, res.headers["location"])
         assert body["status"] == "SUCCEEDED"
         assert [r["turnNumber"] for r in body["responses"]] == [0, 1, 2]
+        players = [r["rootInfo"]["currentPlayer"] for r in body["responses"]]
+        assert players == ["B", "W", "B"]
         assert {r["id"] for r in body["responses"]} == {created["id"]}
         assert "error" not in body and body["startedAt"] and body["finishedAt"]
         assert "retry-after" not in c.get(res.headers["location"]).headers
