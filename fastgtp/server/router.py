@@ -357,10 +357,15 @@ def create_app(
     transport_manager: GTPTransportManager,
     *,
     retry_after_seconds: int = 5,
+    katago_router: APIRouter | None = None,
     app_kwargs: dict[str, Any] | None = None,
     router_kwargs: dict[str, Any] | None = None,
 ) -> FastAPI:
-    """Create a FastAPI application that exposes the GTP router."""
+    """Create a FastAPI application that exposes the GTP router.
+
+    ``katago_router``, from ``fastgtp.katago.router.create_katago_router``,
+    adds the KataGo extension's routes and its part of the spec.
+    """
 
     if app_kwargs is None:
         app_kwargs = {}
@@ -375,10 +380,18 @@ def create_app(
             await transport_manager.close_all()
 
     app = FastAPI(title="fastgtp", lifespan=lifespan, **app_kwargs)
-    _serve_spec(app)
+    spec = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    if katago_router is not None:
+        # Imported here: the extension imports this package's problem types.
+        from fastgtp.katago.router import SPEC as KATAGO_SPEC
+
+        spec = merge_specs(spec, yaml.safe_load(KATAGO_SPEC.read_text("utf-8")))
+    _serve_spec(app, spec)
     install_problem_handlers(app)
     fastgtp_router = FastGtp(retry_after_seconds=retry_after_seconds, **router_kwargs)
     app.include_router(fastgtp_router)
+    if katago_router is not None:
+        app.include_router(katago_router)
 
     async def override_get_manager() -> GTPTransportManager:
         return transport_manager
@@ -388,10 +401,30 @@ def create_app(
     return app
 
 
-def _serve_spec(app: FastAPI) -> None:
+def merge_specs(spec: dict[str, Any], extension: dict[str, Any]) -> dict[str, Any]:
+    """Add an extension's paths and components to ``spec``.
+
+    Two components with one name but different content would make one of
+    them wrong, so that fails instead of keeping either.
+    """
+    paths = dict(spec.get("paths", {}))
+    for path, item in extension.get("paths", {}).items():
+        if path in paths:
+            raise ValueError(f"Both specs define the path {path}")
+        paths[path] = item
+    components = {k: dict(v) for k, v in spec.get("components", {}).items()}
+    for section, items in extension.get("components", {}).items():
+        target = components.setdefault(section, {})
+        for name, value in items.items():
+            if name in target and target[name] != value:
+                raise ValueError(f"Both specs define {section}/{name} differently")
+            target[name] = value
+    return {**spec, "paths": paths, "components": components}
+
+
+def _serve_spec(app: FastAPI, spec: dict[str, Any]) -> None:
     # No fallback to the generated document: it differs from the spec in its
     # error responses, and serving it quietly would hide a missing file.
-    spec = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
 
     def openapi() -> dict[str, Any]:
         # FastAPI adds the proxy's root path to app.servers before it asks for
