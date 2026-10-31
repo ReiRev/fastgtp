@@ -22,7 +22,9 @@ model = "kata1-b18c384nbt-s9732312320-d4245566942.bin.gz"
 
 # Optional. Settings that replace the config files' values, passed with
 # -override-config. fastgtp always sets reportAnalysisWinratesAs = "BLACK".
-overrides = { numSearchThreads = 8 }
+# Use the key the config file uses: KataGo refuses numSearchThreads next to
+# the numSearchThreadsPerAnalysisThread that analysis_example.cfg sets.
+overrides = { numSearchThreadsPerAnalysisThread = 8 }
 
 # Optional limits. The values shown are the defaults, except max_visits,
 # which has no limit by default.
