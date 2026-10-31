@@ -73,6 +73,7 @@ class KataGoRouter(APIRouter):
         **router_kwargs: Any,
     ) -> None:
         super().__init__(**router_kwargs)
+        self.katagos = katagos
 
         def katago(katago_id: str) -> KataGoQueries:
             if katago_id not in katagos:
@@ -157,7 +158,7 @@ def create_katago_router(
                 configs=s.configs,
                 model=s.model,
                 human_model=s.human_model,
-                overrides=s.overrides,
+                overrides=s.override_strings(),
             ),
             max_running=s.max_running,
             max_queued=s.max_queued,

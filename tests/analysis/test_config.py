@@ -54,6 +54,17 @@ def test_settings_are_read(tmp_path):
     assert settings["default"].max_running == 1
 
 
+def test_overrides_may_be_numbers_or_booleans(tmp_path):
+    body = '[katago.a]\ncommand = ["k"]\nconfigs = ["c"]\nmodel = "m"\n'
+    body += "overrides = { maxVisits = 10, nnRandomize = false, x = 0.5 }"
+    settings = load_settings(write_settings(tmp_path, body))["a"]
+    assert settings.override_strings() == {
+        "maxVisits": "10",
+        "nnRandomize": "false",
+        "x": "0.5",
+    }
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -61,8 +72,11 @@ def test_settings_are_read(tmp_path):
         '[katago."a/b"]\ncommand = ["k"]\nconfigs = ["c"]\nmodel = "m"',
         '[katago.a]\ncommand = ["k"]\nconfigs = ["c"]\nmodel = "m"\nmaxVisits = 1',
         '[katago.a]\ncommand = ["k"]\nconfigs = []\nmodel = "m"',
+        '[katago.a]\ncommand = [""]\nconfigs = ["c"]\nmodel = "m"',
+        '[katago.a]\ncommand = ["k"]\nconfigs = ["c"]\nmodel = "m"\nmax_running = true',
+        '[katago.a]\ncommand = ["k"]\nconfigs = ["c"]\nmodel = "m"\ntimeout_seconds = inf',
     ],
-    ids=["none", "bad-name", "unknown-key", "no-config"],
+    ids=["none", "bad-name", "unknown-key", "no-config", "empty", "bool", "inf"],
 )
 def test_bad_settings_are_refused(tmp_path, body):
     with pytest.raises(ValidationError):
@@ -94,10 +108,16 @@ def test_extension_routes_and_spec(tmp_path):
 
 
 def test_engine_that_does_not_start_stops_the_app(tmp_path):
-    app = app_with_extension(fake_settings(tmp_path, '["/nonexistent/katago"]'))
+    good = load_settings(fake_settings(tmp_path))["default"]
+    bad = good.model_copy(update={"command": ["/nonexistent/katago"]})
+    router = create_katago_router({"good": good, "bad": bad})
+    app = create_app(GTPTransportManager(NoEngine()), katago_router=router)
     with pytest.raises(OSError):
         with TestClient(app):
             pass
+    # The KataGo that had started was stopped.
+    process = router.katagos["good"].engine._process
+    assert process is None
 
 
 def test_conflicting_components_are_refused():
@@ -106,6 +126,8 @@ def test_conflicting_components_are_refused():
     clash = {"components": {"schemas": {name: {**schema, "title": "other"}}}}
     with pytest.raises(ValueError):
         merge_specs(spec, clash)
+    with pytest.raises(ValueError):
+        merge_specs(spec, {"paths": {"/sessions": {}}})
     # The same content under the same name is fine.
     same = {"components": {"schemas": {name: schema}}}
     assert merge_specs(spec, same)["components"] == spec["components"]

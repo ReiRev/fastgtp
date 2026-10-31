@@ -1,0 +1,5 @@
+[katago.a]
+command = ["k"]
+configs = ["c"]
+model = "m"
+overrides = {maxVisits = 10}

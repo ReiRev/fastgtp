@@ -8,6 +8,9 @@ under ``/katago/<name>``::
     configs = ["analysis.cfg"]
     model = "model.bin.gz"
     max_visits = 10000
+    overrides = { numSearchThreads = 8 }
+
+``overrides`` are passed to KataGo with ``-override-config``.
 """
 
 from __future__ import annotations
@@ -16,7 +19,14 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    StrictInt,
+    StringConstraints,
+)
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -25,6 +35,7 @@ else:
 
 # The name goes into URLs, so it is kept to characters that need no escaping.
 KataGoName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]+$")]
+NonEmpty = Annotated[str, StringConstraints(min_length=1)]
 
 
 class KataGoSettings(BaseModel):
@@ -32,16 +43,23 @@ class KataGoSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    command: list[str] = Field(min_length=1)
-    configs: list[str] = Field(min_length=1)
-    model: str
-    human_model: str | None = None
-    overrides: dict[str, str] = {}
-    max_running: int = Field(1, ge=1)
-    max_queued: int = Field(64, ge=0)
-    timeout_seconds: float = Field(600.0, gt=0)
-    keep_seconds: float = Field(600.0, gt=0)
-    max_visits: int | None = Field(None, ge=1)
+    command: list[NonEmpty] = Field(min_length=1)
+    configs: list[NonEmpty] = Field(min_length=1)
+    model: NonEmpty
+    human_model: NonEmpty | None = None
+    overrides: dict[NonEmpty, str | bool | StrictInt | FiniteFloat] = {}
+    max_running: StrictInt = Field(1, ge=1)
+    max_queued: StrictInt = Field(64, ge=0)
+    timeout_seconds: FiniteFloat = Field(600.0, gt=0)
+    keep_seconds: FiniteFloat = Field(600.0, gt=0)
+    max_visits: StrictInt | None = Field(None, ge=1)
+
+    def override_strings(self) -> dict[str, str]:
+        """The overrides as KataGo reads them on its command line."""
+        return {
+            key: str(value).lower() if isinstance(value, bool) else str(value)
+            for key, value in self.overrides.items()
+        }
 
 
 class _File(BaseModel):
