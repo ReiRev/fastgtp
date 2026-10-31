@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry==2.2.1
+      # A release tagged v0.1.0 must not upload whatever version pyproject.toml has.
+      - name: Check the tag matches the version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="v$(poetry version -s)"
+          if [ "$version" != "$TAG" ]; then
+            echo "The tag is $TAG but pyproject.toml has $version." >&2
+            exit 1
+          fi
+      - run: poetry build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # A separate job, so only the upload step can get a PyPI token. PyPI trusts
+  # this workflow and the "pypi" environment, so no secret is stored.
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -33,3 +33,9 @@ The tests run against GNU Go and KataGo. KataGo needs `/opt/katago` from the dev
 - **Formatting.** Format Python with black.
 
 For a pull request, follow the `open-pr` skill. For a change to the HTTP API, follow the `api-change` skill.
+
+## Releasing
+
+1. In a pull request, set the new version with `poetry version <version>`.
+2. After it is merged, create a GitHub release with the tag `v<version>` on main.
+3. `.github/workflows/release.yml` builds the package and uploads it to PyPI. It fails if the tag does not match the version in `pyproject.toml`.
