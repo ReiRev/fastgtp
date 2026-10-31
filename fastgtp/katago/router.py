@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
+from importlib.resources import files
 from typing import Any, Literal, Mapping
 
 from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt
 
+from fastgtp.katago.config import KataGoSettings
+from fastgtp.katago.engine import KataGoEngine
 from fastgtp.katago.queries import KataGoQueries, QueueFullError
 from fastgtp.server.problems import (
     INVALID_REQUEST,
@@ -17,6 +21,8 @@ from fastgtp.server.problems import (
     QUEUE_FULL,
     ProblemError,
 )
+
+SPEC = files("fastgtp") / "katago" / "openapi.yaml"
 
 Player = Literal["B", "W", "b", "w"]
 KataGoMove = tuple[Player, str]
@@ -67,6 +73,7 @@ class KataGoRouter(APIRouter):
         **router_kwargs: Any,
     ) -> None:
         super().__init__(**router_kwargs)
+        self.katagos = katagos
 
         def katago(katago_id: str) -> KataGoQueries:
             if katago_id not in katagos:
@@ -134,3 +141,46 @@ class KataGoRouter(APIRouter):
             if not await katago(katago_id).delete(query_id):
                 raise ProblemError(QUERY_NOT_FOUND, "Unknown query")
             return Response(status_code=204)
+
+
+def create_katago_router(
+    settings: Mapping[str, KataGoSettings], **router_kwargs: Any
+) -> KataGoRouter:
+    """Build the routes for each configured KataGo.
+
+    The router's lifespan starts every KataGo and stops them at shutdown.
+    FastAPI merges it into the app's lifespan in ``include_router``.
+    """
+    katagos = {
+        name: KataGoQueries(
+            KataGoEngine(
+                s.command,
+                configs=s.configs,
+                model=s.model,
+                human_model=s.human_model,
+                overrides=s.override_strings(),
+            ),
+            max_running=s.max_running,
+            max_queued=s.max_queued,
+            timeout_seconds=s.timeout_seconds,
+            keep_seconds=s.keep_seconds,
+            max_visits=s.max_visits,
+        )
+        for name, s in settings.items()
+    }
+
+    @asynccontextmanager
+    async def lifespan(_: Any):
+        started: list[KataGoQueries] = []
+        try:
+            for queries in katagos.values():
+                # Added first, so a KataGo that fails while starting is stopped.
+                started.append(queries)
+                await queries.engine.start()
+            yield
+        finally:
+            for queries in reversed(started):
+                await queries.aclose()
+                await queries.engine.aclose()
+
+    return KataGoRouter(katagos, lifespan=lifespan, **router_kwargs)

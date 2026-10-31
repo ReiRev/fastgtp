@@ -11,6 +11,8 @@ JSON array). Optional variables:
   is one engine process.
 - `FASTGTP_RETRY_AFTER_SECONDS` (5): sent in `Retry-After` when the limit is
   reached.
+- `FASTGTP_KATAGO_CONFIG`: a TOML file that turns on the KataGo extension.
+  See `examples/katago.toml` for its format.
 
 The module exposes a module-level `app` object so tooling such as
 `fastapi dev fastgtp/server/main.py` or `uvicorn fastgtp.server.main:app` can pick it up.
@@ -45,7 +47,16 @@ manager = GTPTransportManager(
     max_sessions=_positive_int("FASTGTP_MAX_SESSIONS", 8),
 )
 
+katago_config = os.environ.get("FASTGTP_KATAGO_CONFIG")
+katago_router = None
+if katago_config:
+    from ..katago.config import load_settings
+    from ..katago.router import create_katago_router
+
+    katago_router = create_katago_router(load_settings(katago_config))
+
 app = create_app(
     manager,
     retry_after_seconds=_positive_int("FASTGTP_RETRY_AFTER_SECONDS", 5),
+    katago_router=katago_router,
 )

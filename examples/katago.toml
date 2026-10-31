@@ -1,0 +1,41 @@
+# Settings for fastgtp's KataGo extension.
+#
+# Point FASTGTP_KATAGO_CONFIG at a copy of this file to turn the extension on:
+#
+#     FASTGTP_KATAGO_CONFIG=katago.toml uvicorn fastgtp.server.main:app
+#
+# Each [katago.<name>] table starts one `katago analysis` process, served
+# under /katago/<name>. A name may use only A-Z, a-z, 0-9, "_" and "-".
+# Clients may rely on a name always meaning the same config and model, so
+# to change them, add a KataGo with a new name.
+
+[katago.default]
+# The KataGo executable, with any arguments that come before `analysis`.
+command = ["katago"]
+# Analysis config files, passed with -config. KataGo ships an example as
+# analysis_example.cfg.
+configs = ["analysis.cfg"]
+# The neural net, passed with -model. Clients see only its file name.
+model = "kata1-b18c384nbt-s9732312320-d4245566942.bin.gz"
+# Optional. A human SL model, passed with -human-model.
+# human_model = "b18c384nbt-humanv0.bin.gz"
+
+# Optional. Settings that replace the config files' values, passed with
+# -override-config. fastgtp always sets reportAnalysisWinratesAs = "BLACK".
+overrides = { numSearchThreads = 8 }
+
+# Optional limits. The values shown are the defaults, except max_visits,
+# which has no limit by default.
+max_running = 1        # queries KataGo runs at once
+max_queued = 64        # queries that may wait; one more gets 503 queue-full
+timeout_seconds = 600  # a query running longer is terminated and fails
+keep_seconds = 600     # how long a finished query can still be read
+max_visits = 10000     # the largest maxVisits a query may ask for
+
+# A second KataGo with another model would be its own table:
+#
+# [katago.human]
+# command = ["katago"]
+# configs = ["analysis.cfg"]
+# model = "kata1-b18c384nbt-s9732312320-d4245566942.bin.gz"
+# human_model = "b18c384nbt-humanv0.bin.gz"
