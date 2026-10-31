@@ -35,7 +35,13 @@ def response(query_id: str, turn: int, visits: int) -> dict:
         "id": query_id,
         "turnNumber": turn,
         "isDuringSearch": False,
-        "rootInfo": {"visits": visits, "winrate": 0.5, "scoreLead": 0.0},
+        # Black moves first, as in a game without handicap stones.
+        "rootInfo": {
+            "currentPlayer": "B" if turn % 2 == 0 else "W",
+            "visits": visits,
+            "winrate": 0.5,
+            "scoreLead": 0.0,
+        },
         "moveInfos": [],
     }
 
