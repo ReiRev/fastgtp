@@ -98,13 +98,14 @@ Winrates, scores and ownership are from Black's point of view. KataGo checks the
 
 ## Docker Compose
 
-The image includes KataGo and a network, and needs an NVIDIA GPU:
+The image includes KataGo and a network, and needs an NVIDIA GPU. Compose reads settings from `.env`, so create it first:
 
 ```bash
+cp .env.sample .env
 docker compose up --build
 ```
 
-The service listens on `localhost:8000` and runs KataGo in GTP mode. Settings go in `.env`:
+The service listens on port 8000 on every interface of the host, and runs KataGo in GTP mode. To change the port or the engine, edit `.env`:
 
 ```env
 FASTGTP_PORT=9000
@@ -120,7 +121,7 @@ poetry run pytest -q -k "not katago"
 uvx black --check fastgtp tests
 ```
 
-The tests run against GNU Go and a fake analysis engine. Tests named `katago` need KataGo from the dev container.
+The tests run against GNU Go and a fake analysis engine. The KataGo variants of the tests need KataGo from the dev container, so `-k "not katago"` leaves them out.
 
 Issues and pull requests are welcome at [github.com/ReiRev/fastgtp](https://github.com/ReiRev/fastgtp/issues).
 
