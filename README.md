@@ -1,73 +1,129 @@
 # fastgtp
 
-Fast-track your Go engine to the web! **fastgtp** wraps any Go Text Protocol (GTP) engine in a blazing-fast FastAPI service so you can ship HTTP-ready endpoints without taming stdin/stdout pipes by hand.
+fastgtp puts a Go engine behind an HTTP API. It runs any engine that speaks the Go Text Protocol (GTP), such as KataGo or GNU Go, and turns GTP commands into REST calls, so a web app does not have to drive the engine's stdin and stdout itself.
 
-## Why fastgtp?
+It also has an optional KataGo extension, which runs KataGo's analysis engine and lets clients send it analysis queries over HTTP.
 
-- ⚫ **Built for Go AI** – GTP is the language of top-tier Go engines, but it speaks only through stdio.  
-  fastgtp translates it into REST so your engine can join modern platforms, dashboards, and MLOps stacks.
-- 🌐 **HTTP-first** – Turn `genmove`, `play`, `printsgf`, and custom commands into HTTPS endpoints in minutes.  
-  No more glue scripts or brittle shell wrappers.
-- 🚀 **Developer-friendly** – Powered by FastAPI, Pydantic models, and async I/O, it scales from hackathon prototypes to production bots.
-
-## Quick Start
-
-```python
-from fastgtp import create_app, GTPTransportManager, SubprocessGTPTransport
-
-transport = SubprocessGTPTransport("katago gtp -config /path/to/fastgtp.cfg -model /path/to/network.bin.gz")
-manager = GTPTransportManager(transport)
-app = create_app(manager)
-
-# run with: uvicorn fastgtp.server.main:app --reload
-```
-
-Once the app is running:
+## Run it
 
 ```bash
-curl -X POST http://localhost:8000/open_session
-# => {"session_id": "..."}
+poetry install
+FASTGTP_ENGINE="gnugo --mode gtp" poetry run uvicorn fastgtp.server.main:app
+```
 
-curl http://localhost:8000/<session_id>/name
-# => {"name": "KataGo"}
+`FASTGTP_ENGINE` is the command that starts the engine. Any GTP engine works, for example `katago gtp -config gtp.cfg -model model.bin.gz`.
 
-## Run with Docker Compose
+Other settings, all optional:
 
-Launch the full stack (fastgtp + KataGo) with one command:
+| Variable | Default | Meaning |
+|---|---|---|
+| `FASTGTP_MAX_SESSIONS` | 8 | The most sessions, and so engine processes, that run at once. |
+| `FASTGTP_RETRY_AFTER_SECONDS` | 5 | Sent in `Retry-After` when the session limit is reached. |
+| `FASTGTP_KATAGO_CONFIG` | | A settings file that turns on the [KataGo extension](#katago-extension). |
+
+The API is described in [`openapi.yaml`](openapi.yaml). A running server serves it at `/openapi.json` and as interactive documentation at `/docs`. Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, listed in [`docs/problems.md`](docs/problems.md).
+
+## Play a game
+
+Each session is one engine process. Start one:
+
+```bash
+curl -X POST http://localhost:8000/sessions
+# {"session_id":"e262278eb0314026b29cbb0f0042c454","engine":{"name":"GNU Go","version":"3.8","protocol_version":"2","commands":[...]}}
+
+SESSION=e262278eb0314026b29cbb0f0042c454
+```
+
+Set up an empty 9×9 board:
+
+```bash
+curl -X PUT http://localhost:8000/sessions/$SESSION/board \
+  -H 'content-type: application/json' -d '{"size": 9, "komi": 6.5}'
+# {"size":9,"komi":6.5,"sgf":"(;GM[1]FF[4]\nSZ[9]...)"}
+```
+
+Play a move, then let the engine answer. A move without `vertex` asks the engine to choose one:
+
+```bash
+curl -X POST http://localhost:8000/sessions/$SESSION/moves \
+  -H 'content-type: application/json' -d '{"color": "BLACK", "vertex": "E5"}'
+# {"color":"BLACK","vertex":"E5"}
+
+curl -X POST http://localhost:8000/sessions/$SESSION/moves \
+  -H 'content-type: application/json' -d '{"color": "WHITE"}'
+# {"color":"WHITE","vertex":"C4"}
+```
+
+Read the board as SGF, take back the last move, and stop the engine:
+
+```bash
+curl http://localhost:8000/sessions/$SESSION/board
+curl -X DELETE http://localhost:8000/sessions/$SESSION/moves/last
+curl -X DELETE http://localhost:8000/sessions/$SESSION
+```
+
+`PUT /sessions/{session_id}/board` also takes `{"sgf": "..."}` to load a game record.
+
+## KataGo extension
+
+The extension runs `katago analysis`, KataGo's [analysis engine](https://github.com/lightvector/KataGo/blob/master/docs/Analysis_Engine.md), and keeps its names and formats: a query here is a query of the analysis engine. Its routes are described in [`fastgtp/katago/openapi.yaml`](fastgtp/katago/openapi.yaml), and they are added to `/openapi.json` when the extension is on.
+
+To turn it on, copy [`examples/katago.toml`](examples/katago.toml), set the KataGo command, config and model in it, and point `FASTGTP_KATAGO_CONFIG` at it:
+
+```bash
+FASTGTP_ENGINE="gnugo --mode gtp" FASTGTP_KATAGO_CONFIG=katago.toml \
+  poetry run uvicorn fastgtp.server.main:app
+```
+
+Each `[katago.<name>]` table in the file starts one KataGo, served under `/katago/<name>`. Send a query:
+
+```bash
+curl -i -X POST http://localhost:8000/katago/default/queries \
+  -H 'content-type: application/json' \
+  -d '{"rules": "japanese", "komi": 6.5, "boardXSize": 19, "boardYSize": 19,
+       "moves": [["B", "Q16"], ["W", "D4"]], "maxVisits": 100}'
+# HTTP/1.1 201 Created
+# location: /katago/default/queries/a8544bb5eeda4e6997c1ca11a298262f
+# retry-after: 1
+```
+
+Then read it at `Location` until its `status` is `SUCCEEDED` or `FAILED`:
+
+```bash
+curl http://localhost:8000/katago/default/queries/a8544bb5eeda4e6997c1ca11a298262f
+# {"id":"a8544bb5eeda4e6997c1ca11a298262f","status":"SUCCEEDED","query":{...},"responses":[{"turnNumber":2,"rootInfo":{"winrate":0.47,...},"moveInfos":[...],...}],...}
+```
+
+Winrates, scores and ownership are from Black's point of view. KataGo checks the game itself, so a query with an illegal move ends as `FAILED` with KataGo's error, such as `{"error": "Illegal move 3: Q16", "field": "moves"}`.
+
+## Docker Compose
+
+The image includes KataGo and a network, and needs an NVIDIA GPU:
 
 ```bash
 docker compose up --build
 ```
 
-By default the service listens on `localhost:8000` and persists KataGo networks/logs in managed volumes.  
-Need to tweak ports or engine arguments? Drop overrides in `.env`:
+The service listens on `localhost:8000` and runs KataGo in GTP mode. Settings go in `.env`:
 
 ```env
 FASTGTP_PORT=9000
 FASTGTP_ENGINE="katago gtp -config /opt/katago/configs/fastgtp.cfg -model /opt/katago/networks/kata1-b28c512nbt-s11233360640-d5406293331.bin.gz"
 ```
 
-The compose file ships with a KataGo command for convenience, but you can point `FASTGTP_ENGINE` to **any** GTP-compatible binary—Leela Zero, ELF, your homebrew bot, you name it.
+KataGo's example configs, including `analysis_example.cfg`, are in `/opt/katago/configs` in the image, for use in a KataGo extension settings file.
 
-Mount custom configs or networks via `docker-compose.yml`:
+## Development
 
-```yaml
-    volumes:
-      - ./my-fastgtp.cfg:/opt/katago/configs/fastgtp.cfg:ro
-      - ./my-network.bin.gz:/opt/katago/networks/my-network.bin.gz:ro
+```bash
+poetry run pytest -q -k "not katago"
+uvx black --check fastgtp tests
 ```
 
-Then rerun `docker compose up` and you’re ready to curl.
+The tests run against GNU Go and a fake analysis engine. Tests named `katago` need KataGo from the dev container.
 
-## Still Cooking – Contributions Welcome!
+Issues and pull requests are welcome at [github.com/ReiRev/fastgtp](https://github.com/ReiRev/fastgtp/issues).
 
-fastgtp is under active development. Have ideas, issues, or wishlists?  
-[Open an issue](https://github.com/your-org/fastgtp/issues) and let’s build the ultimate GTP gateway together.
+## License
 
-If this project sparks joy, **drop us a ⭐️**. It helps more Go developers discover fastgtp!
-
-## LICENSE
-
-This project is licensed under the PolyForm Noncommercial License 1.0.0.  
-You may use it freely for personal or noncommercial purposes.  
-Commercial use is prohibited.  
+This project is licensed under the PolyForm Noncommercial License 1.0.0. You may use it freely for personal or noncommercial purposes. Commercial use is prohibited.

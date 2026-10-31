@@ -8,7 +8,8 @@ fastgtp wraps a Go Text Protocol (GTP) engine process in a FastAPI service.
 - `fastgtp/server/gtp.py`: GTP replies and errors.
 - `fastgtp/server/router.py`: the HTTP routes.
 - `fastgtp/server/main.py`: builds the app from environment variables.
-- `tests/`: pytest tests. `tests/transport/stub_engine.py` is a small fake engine.
+- `fastgtp/katago/`: the optional KataGo extension, which runs `katago analysis`. It has its own spec, `fastgtp/katago/openapi.yaml`.
+- `tests/`: pytest tests. `tests/transport/stub_engine.py` is a small fake engine, and `tests/analysis/fake_analysis.py` a fake KataGo analysis engine.
 
 ## Commands
 
