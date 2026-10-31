@@ -8,6 +8,7 @@ so one task reads stdout and hands each line to the query it belongs to.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -132,16 +133,21 @@ class KataGoEngine:
 
         A KataGo that has stopped is started again first.
         """
+        if "action" in query:
+            # KataGo would treat the line as that action, not as a query.
+            raise ValueError("A query cannot have an action")
         turns = len(set(query.get("analyzeTurns", [None])))
         if turns == 0:
             # KataGo answers an empty analyzeTurns with nothing at all, so
             # the query would never finish.
             raise ValueError("analyzeTurns cannot be empty")
         running = RunningQuery(uuid.uuid4().hex, turns)
+        # Encoded first, so a query that cannot be sent is never registered.
+        line = _encode({**query, "id": running.katago_id})
         async with self._lock:
             await self._ensure_process()
             self._queries[running.katago_id] = running
-            await self._write({**query, "id": running.katago_id})
+            await self._write(line)
         return running
 
     async def terminate(self, running: RunningQuery) -> None:
@@ -166,7 +172,7 @@ class KataGoEngine:
             if self._process is None or self._process.returncode is not None:
                 raise KataGoError("KataGo is not running")
             self._actions[action_id] = future
-            await self._write({"id": action_id, "action": action, **fields})
+            await self._write(_encode({"id": action_id, "action": action, **fields}))
         return await future
 
     async def _ensure_process(self) -> Process:
@@ -188,9 +194,9 @@ class KataGoEngine:
         self._reader = asyncio.create_task(self._read(self._process, self._stderr_task))
         return self._process
 
-    async def _write(self, message: dict[str, Any]) -> None:
+    async def _write(self, line: bytes) -> None:
         assert self._process is not None and self._process.stdin is not None
-        self._process.stdin.write((json.dumps(message) + "\n").encode("utf-8"))
+        self._process.stdin.write(line)
         try:
             await self._process.stdin.drain()
         except ConnectionResetError:
@@ -199,13 +205,20 @@ class KataGoEngine:
 
     async def _read(self, process: Process, stderr_task: asyncio.Task[bytes]) -> None:
         assert process.stdout is not None
-        while line := await process.stdout.readline():
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                logger.warning("KataGo wrote a line that is not JSON")
-                continue
-            self._route(message)
+        try:
+            while line := await process.stdout.readline():
+                try:
+                    message = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("KataGo wrote a line that is not JSON")
+                    continue
+                self._route(message)
+        except Exception:
+            # Without this task nothing would ever finish, so KataGo is
+            # stopped and the queries fail below. The next query restarts it.
+            logger.exception("Could not read KataGo's output")
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
         await process.wait()
         # aclose clears _process first, so only an exit nobody asked for is
         # logged.
@@ -232,7 +245,10 @@ class KataGoEngine:
         message_id = message.get("id") if isinstance(message, dict) else None
         if message_id in self._actions:
             future = self._actions.pop(message_id)
-            if "error" in message:
+            if future.done():
+                # The caller was cancelled and no longer waits.
+                pass
+            elif "error" in message:
                 future.set_exception(KataGoError(message["error"]))
             else:
                 future.set_result(message)
@@ -245,6 +261,12 @@ class KataGoEngine:
             # An error about a line KataGo could not read has no id. fastgtp
             # writes every line itself, so this is a bug worth logging.
             logger.warning("KataGo sent a message for no known query: %s", message)
+
+
+def _encode(message: dict[str, Any]) -> bytes:
+    # KataGo cannot read NaN or Infinity, and would report the line without
+    # an id, so the query would never finish.
+    return (json.dumps(message, allow_nan=False) + "\n").encode("utf-8")
 
 
 async def _drain(process: Process) -> bytes:

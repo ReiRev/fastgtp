@@ -115,6 +115,32 @@ def test_empty_turns_are_refused():
     run(scenario)
 
 
+def test_queries_that_cannot_be_sent_are_refused():
+    async def scenario(e):
+        for query in ({**QUERY, "komi": float("nan")}, {**QUERY, "action": "x"}):
+            with pytest.raises(ValueError):
+                await e.submit(query)
+        return await finish(e, QUERY)
+
+    assert run(scenario).error is None
+
+
+def test_cancelled_terminate_leaves_the_engine_working():
+    async def scenario(e):
+        slow = await e.submit({**QUERY, "maxVisits": 1_000_000})
+        terminating = asyncio.create_task(e.terminate(slow))
+        # The terminate line is written in the same step that registers it.
+        while not e._actions:
+            await asyncio.sleep(0)
+        terminating.cancel()
+        await slow.done.wait()
+        return slow, await finish(e, QUERY)
+
+    slow, after = run(scenario)
+    assert slow.error is None
+    assert after.error is None and len(after.responses) == 1
+
+
 def test_queries_get_their_own_responses():
     async def scenario(e):
         slow = await e.submit({**QUERY, "maxVisits": 1_000_000})
