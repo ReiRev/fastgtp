@@ -12,7 +12,7 @@ JSON array). Optional variables:
 - `FASTGTP_RETRY_AFTER_SECONDS` (5): sent in `Retry-After` when the limit is
   reached.
 - `FASTGTP_KATAGO_CONFIG`: a TOML file that turns on the KataGo extension.
-  See `fastgtp/katago/config.py` for its format.
+  See `examples/katago.toml` for its format.
 
 The module exposes a module-level `app` object so tooling such as
 `fastapi dev fastgtp/server/main.py` or `uvicorn fastgtp.server.main:app` can pick it up.

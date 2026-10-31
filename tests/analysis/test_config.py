@@ -54,6 +54,13 @@ def test_settings_are_read(tmp_path):
     assert settings["default"].max_running == 1
 
 
+def test_example_is_valid():
+    example = Path(__file__).parents[2] / "examples" / "katago.toml"
+    settings = load_settings(example)
+    assert list(settings) == ["default"]
+    assert settings["default"].override_strings() == {"numSearchThreads": "8"}
+
+
 def test_overrides_may_be_numbers_or_booleans(tmp_path):
     body = '[katago.a]\ncommand = ["k"]\nconfigs = ["c"]\nmodel = "m"\n'
     body += "overrides = { maxVisits = 10, nnRandomize = false, x = 0.5 }"

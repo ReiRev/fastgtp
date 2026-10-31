@@ -11,6 +11,7 @@ under ``/katago/<name>``::
     overrides = { numSearchThreads = 8 }
 
 ``overrides`` are passed to KataGo with ``-override-config``.
+``examples/katago.toml`` describes every key.
 """
 
 from __future__ import annotations
