@@ -1,0 +1,620 @@
+openapi: 3.1.0
+info:
+  title: fastgtp KataGo extension
+  version: 0.1.0
+  description: |
+    Routes that only work with KataGo. They exist when the server is
+    configured with KataGo, and fastgtp then adds them to its main API
+    document.
+
+    They run KataGo's analysis engine (`katago analysis`) and keep its
+    names and formats: a query here is a query of the analysis engine, and
+    its responses are the engine's responses. See KataGo's
+    [analysis engine documentation](https://github.com/lightvector/KataGo/blob/master/docs/Analysis_Engine.md)
+    for what each field means. This document only notes where fastgtp
+    differs.
+
+    The server can run several KataGo analysis engines, each started with
+    its own config and model. `GET /katago` lists them, and the routes under
+    `/katago/{katago_id}` work as that one KataGo. KataGo does not promise
+    the same numbers for the same query, so two runs may differ slightly.
+  contact:
+    name: fastgtp
+    url: https://github.com/ReiRev/fastgtp
+  license:
+    name: PolyForm Noncommercial License 1.0.0
+    url: https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+paths:
+  /katago:
+    get:
+      operationId: listKataGos
+      summary: List the KataGo analysis engines
+      description: The list is short and fixed by the server's configuration, so it is not paginated.
+      responses:
+        "200":
+          description: All KataGo analysis engines.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataGoList"
+        default:
+          $ref: "#/components/responses/KataGoProblem"
+
+  /katago/{katago_id}/version:
+    parameters:
+      - $ref: "#/components/parameters/KataGoId"
+    get:
+      operationId: getKataGoVersion
+      summary: Read the KataGo version
+      description: The engine's answer to the `query_version` action.
+      responses:
+        "200":
+          description: The version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataGoVersion"
+        "404":
+          $ref: "#/components/responses/KataGoNotFound"
+        default:
+          $ref: "#/components/responses/KataGoProblem"
+
+  /katago/{katago_id}/models:
+    parameters:
+      - $ref: "#/components/parameters/KataGoId"
+    get:
+      operationId: getKataGoModels
+      summary: Read the loaded models
+      description: The engine's answer to the `query_models` action.
+      responses:
+        "200":
+          description: The models.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataGoModelList"
+        "404":
+          $ref: "#/components/responses/KataGoNotFound"
+        default:
+          $ref: "#/components/responses/KataGoProblem"
+
+  /katago/{katago_id}/queries:
+    parameters:
+      - $ref: "#/components/parameters/KataGoId"
+    post:
+      operationId: createKataGoQuery
+      summary: Send a query
+      description: |
+        Queues an analysis query. Poll it at `Location` until its status is
+        `SUCCEEDED` or `FAILED`.
+
+        fastgtp checks the query against this schema and its own limits,
+        and answers `400` when it fails. KataGo checks the game itself, such
+        as locations, legal moves, rules names and turn numbers; a query
+        that KataGo rejects ends as `FAILED` with KataGo's error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KataGoQueryInput"
+      responses:
+        "201":
+          description: The query was queued.
+          headers:
+            Location:
+              description: The path of the new query, for example `/katago/default/queries/8b1e4f`.
+              schema:
+                type: string
+            Retry-After:
+              $ref: "#/components/headers/KataGoPollAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataGoQuery"
+        "400":
+          description: |
+            The body does not match the schema, for example it has an
+            unknown field or a wrong type, or it goes over a limit of the
+            server, such as `maxVisits`. The problem `type` is
+            `.../problems.md#invalid-request`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/KataGoProblem"
+        "404":
+          $ref: "#/components/responses/KataGoNotFound"
+        "503":
+          description: |
+            The queue is full. Try again after `Retry-After`. The problem
+            `type` is `.../problems.md#queue-full`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+                format: int32
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/KataGoProblem"
+        default:
+          $ref: "#/components/responses/KataGoProblem"
+
+  /katago/{katago_id}/queries/{query_id}:
+    parameters:
+      - $ref: "#/components/parameters/KataGoId"
+      - $ref: "#/components/parameters/KataGoQueryId"
+    get:
+      operationId: getKataGoQuery
+      summary: Read a query
+      description: |
+        Returns the query's status and the responses received so far.
+        Queries are kept in memory. A finished query is removed after a
+        while, and every query is lost when fastgtp restarts; both then
+        answer `404`.
+      responses:
+        "200":
+          description: The query.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/KataGoPollAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataGoQuery"
+        "404":
+          $ref: "#/components/responses/KataGoNotFound"
+        default:
+          $ref: "#/components/responses/KataGoProblem"
+    delete:
+      operationId: deleteKataGoQuery
+      summary: Delete a query
+      description: |
+        Removes the query. A query that has not finished is stopped first
+        with the `terminate` action.
+      responses:
+        "204":
+          description: The query was removed.
+        "404":
+          $ref: "#/components/responses/KataGoNotFound"
+        default:
+          $ref: "#/components/responses/KataGoProblem"
+
+components:
+  parameters:
+    KataGoId:
+      name: katago_id
+      in: path
+      required: true
+      description: A name from `GET /katago`, chosen by the server's configuration.
+      schema:
+        type: string
+      example: default
+    KataGoQueryId:
+      name: query_id
+      in: path
+      required: true
+      description: The `id` from `POST /katago/{katago_id}/queries`.
+      schema:
+        type: string
+
+  headers:
+    KataGoPollAfter:
+      description: |
+        Seconds to wait before reading the query again. Sent while the
+        query is `QUEUED` or `RUNNING`.
+      schema:
+        type: integer
+        format: int32
+
+  schemas:
+    KataGoList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KataGo"
+
+    KataGo:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          description: |
+            The name in `/katago/{katago_id}`. A name always means the same
+            config and model: to change them, the server adds a KataGo with
+            a new name.
+          example: default
+
+    KataGoVersion:
+      type: object
+      required: [version, git_hash]
+      properties:
+        version:
+          type: string
+          example: 1.18.2
+        git_hash:
+          type: string
+          example: 0b0c29750fd351a8364440a2c9c83dc50195c05b
+
+    KataGoModelList:
+      type: object
+      required: [models]
+      properties:
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/KataGoModel"
+
+    KataGoModel:
+      type: object
+      description: One entry of `query_models`. KataGo may add fields.
+      required: [name, internalName, maxBatchSize, usesHumanSLProfile, version, usingFP16]
+      properties:
+        name:
+          type: string
+          example: kata1-b18c384nbt-s9732312320-d4245566942.bin.gz
+        internalName:
+          type: string
+          example: kata1-b18c384nbt-s9732312320-d4245566942
+        maxBatchSize:
+          type: integer
+          format: int32
+          example: 256
+        usesHumanSLProfile:
+          type: boolean
+        version:
+          type: integer
+          format: int32
+          example: 14
+        usingFP16:
+          type: string
+          example: auto
+
+    KataGoPlayer:
+      type: string
+      description: KataGo also accepts lower case.
+      enum: [B, W, b, w]
+
+    KataGoMove:
+      type: array
+      description: A player and a location, as in `["B", "Q16"]`. The location may be `pass`.
+      prefixItems:
+        - $ref: "#/components/schemas/KataGoPlayer"
+        - type: string
+          example: Q16
+      minItems: 2
+      maxItems: 2
+
+    KataGoQueryInput:
+      type: object
+      description: |
+        A query of KataGo's analysis engine, without `id`. fastgtp gives the
+        query its `id`.
+
+        fastgtp does not accept `overrideSettings`, `priority`,
+        `priorities`, `reportDuringSearchEvery` or `action`, so that one
+        client cannot change the settings, the order or the results of
+        another. `maxVisits` may not be larger than the server allows, and
+        defaults to the value in the server's config.
+      required: [moves, rules, boardXSize, boardYSize]
+      additionalProperties: false
+      properties:
+        moves:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/KataGoMove"
+        initialStones:
+          type: array
+          maxItems: 361
+          items:
+            $ref: "#/components/schemas/KataGoMove"
+        initialPlayer:
+          $ref: "#/components/schemas/KataGoPlayer"
+        rules:
+          description: A rules name such as `japanese` or `tromp-taylor`, or a full rules object.
+          oneOf:
+            - type: string
+              example: japanese
+            - type: object
+        komi:
+          type: number
+          format: double
+          example: 6.5
+        whiteHandicapBonus:
+          type: string
+          enum: ["0", "N", "N-1"]
+        boardXSize:
+          type: integer
+          format: int32
+          example: 19
+        boardYSize:
+          type: integer
+          format: int32
+          example: 19
+        analyzeTurns:
+          type: array
+          description: Defaults to the last turn only, as in KataGo.
+          maxItems: 1001
+          items:
+            type: integer
+            format: int32
+          example: [0, 1, 2]
+        maxVisits:
+          type: integer
+          format: int32
+          example: 200
+        rootPolicyTemperature:
+          type: number
+          format: double
+        rootFpuReductionMax:
+          type: number
+          format: double
+        analysisPVLen:
+          type: integer
+          format: int32
+        includeOwnership:
+          type: boolean
+        includeOwnershipStdev:
+          type: boolean
+        includeMovesOwnership:
+          type: boolean
+        includeMovesOwnershipStdev:
+          type: boolean
+        includePolicy:
+          type: boolean
+        includePVVisits:
+          type: boolean
+        includeNoResultValue:
+          type: boolean
+        avoidMoves:
+          type: array
+          items:
+            type: object
+        allowMoves:
+          type: array
+          items:
+            type: object
+        focusMoves:
+          type: array
+          items:
+            type: string
+        focusWeights:
+          type: array
+          items:
+            type: number
+            format: double
+        focusProb:
+          type: number
+          format: double
+
+    KataGoQuery:
+      type: object
+      required: [id, status, query, responses, warnings, createdAt]
+      properties:
+        id:
+          type: string
+          description: An opaque id given by fastgtp. Do not parse it.
+          example: 8b1e4f2a9c0d4e7b8a6c9d1e2f3a4b5c
+        status:
+          type: string
+          description: |
+            `SUCCEEDED` when every turn finished its search. `FAILED` when
+            KataGo rejected the query, KataGo stopped, or the query ran
+            longer than the server allows. In the last case fastgtp stops
+            the query with the `terminate` action.
+          enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
+        query:
+          $ref: "#/components/schemas/KataGoQueryInput"
+        responses:
+          type: array
+          description: |
+            KataGo's final responses so far, at most one per analyzed turn,
+            in increasing `turnNumber`. Each `id` is this query's `id`. In a
+            query stopped with `terminate`, a turn stopped mid-search has
+            fewer visits than asked, and a turn KataGo had not started has
+            no response.
+          items:
+            $ref: "#/components/schemas/KataGoResponse"
+        warnings:
+          type: array
+          description: KataGo's warnings for this query. The query still runs.
+          items:
+            $ref: "#/components/schemas/KataGoMessage"
+        error:
+          $ref: "#/components/schemas/KataGoMessage"
+          description: |
+            Why the query failed. Set only when `status` is `FAILED`. It is
+            KataGo's error when KataGo rejected the query, for example
+            `{"error": "Illegal move 1: E5", "field": "moves"}`. Otherwise
+            fastgtp writes one in the same form: KataGo stopped, or the
+            query ran longer than the server allows.
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-10-26T12:00:00Z"
+        startedAt:
+          type: string
+          format: date-time
+          example: "2026-10-26T12:00:01Z"
+        finishedAt:
+          type: string
+          format: date-time
+          example: "2026-10-26T12:01:30Z"
+
+    KataGoMessage:
+      type: object
+      description: An error or a warning, as KataGo writes them.
+      properties:
+        error:
+          type: string
+          example: "Illegal move 1: E5"
+        warning:
+          type: string
+        field:
+          type: string
+          example: moves
+
+    KataGoResponse:
+      type: object
+      description: |
+        One response of KataGo's analysis engine. fastgtp starts KataGo with
+        `reportAnalysisWinratesAs=BLACK`, so winrates, scores and ownership
+        are from Black's point of view. KataGo may add fields.
+      required: [id, turnNumber, isDuringSearch, moveInfos, rootInfo]
+      properties:
+        id:
+          type: string
+        turnNumber:
+          type: integer
+          format: int32
+        isDuringSearch:
+          type: boolean
+          description: Always false here; fastgtp keeps only final responses.
+        moveInfos:
+          type: array
+          items:
+            $ref: "#/components/schemas/KataGoMoveInfo"
+        rootInfo:
+          $ref: "#/components/schemas/KataGoRootInfo"
+        ownership:
+          type: array
+          items:
+            type: number
+            format: double
+        ownershipStdev:
+          type: array
+          items:
+            type: number
+            format: double
+        policy:
+          type: array
+          items:
+            type: number
+            format: double
+
+    KataGoRootInfo:
+      type: object
+      required: [currentPlayer, winrate, scoreLead, visits]
+      properties:
+        currentPlayer:
+          $ref: "#/components/schemas/KataGoPlayer"
+        winrate:
+          type: number
+          format: double
+          example: 0.47
+        scoreLead:
+          type: number
+          format: double
+          example: -1.5
+        scoreSelfplay:
+          type: number
+          format: double
+        utility:
+          type: number
+          format: double
+        visits:
+          type: integer
+          format: int32
+          example: 200
+        thisHash:
+          type: string
+        symHash:
+          type: string
+
+    KataGoMoveInfo:
+      type: object
+      required: [move, order, visits, winrate, scoreLead, prior, pv]
+      properties:
+        move:
+          type: string
+          example: Q16
+        order:
+          type: integer
+          format: int32
+        visits:
+          type: integer
+          format: int32
+        winrate:
+          type: number
+          format: double
+        scoreLead:
+          type: number
+          format: double
+        scoreMean:
+          type: number
+          format: double
+        scoreStdev:
+          type: number
+          format: double
+        scoreSelfplay:
+          type: number
+          format: double
+        prior:
+          type: number
+          format: double
+        utility:
+          type: number
+          format: double
+        lcb:
+          type: number
+          format: double
+        utilityLcb:
+          type: number
+          format: double
+        pv:
+          type: array
+          items:
+            type: string
+          example: [Q16, D4, Q3]
+
+    KataGoProblem:
+      type: object
+      description: |
+        An RFC 9457 problem, the same as in the main document. `type` points
+        to a section of `docs/problems.md` in this repository.
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://github.com/ReiRev/fastgtp/blob/main/docs/problems.md#queue-full
+        title:
+          type: string
+          example: Queue full
+        status:
+          type: integer
+          format: int32
+          example: 503
+        detail:
+          type: string
+          example: Too many queries are waiting.
+        field:
+          type: string
+          example: maxVisits
+        instance:
+          type: string
+          format: uri-reference
+
+  responses:
+    KataGoProblem:
+      description: Any other error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/KataGoProblem"
+    KataGoNotFound:
+      description: |
+        There is no KataGo with this name, or no query with this id. The
+        query may have been deleted, removed after it finished, or lost in
+        a restart. The problem `type` is `.../problems.md#katago-not-found`
+        or `#query-not-found`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/KataGoProblem"

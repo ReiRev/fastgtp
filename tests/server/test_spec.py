@@ -9,13 +9,8 @@ from fastapi.testclient import TestClient
 from fastgtp import GTPTransportManager, create_app
 from fastgtp.server.router import SPEC
 
-# In the spec but not built yet (issues #11 and #12).
-NOT_YET_BUILT = {
-    "/profiles",
-    "/profiles/{profile_name}",
-    "/analysis-jobs",
-    "/analysis-jobs/{job_id}",
-}
+# In the spec but not built yet.
+NOT_YET_BUILT: set[str] = set()
 METHODS = {"get", "put", "post", "delete", "patch"}
 
 
