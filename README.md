@@ -127,4 +127,4 @@ Issues and pull requests are welcome at [github.com/ReiRev/fastgtp](https://gith
 
 ## License
 
-This project is licensed under the PolyForm Noncommercial License 1.0.0. You may use it freely for personal or noncommercial purposes. Commercial use is prohibited.
+fastgtp is licensed under the [Apache License 2.0](LICENSE). You may use, change and share it, also for commercial purposes, as the license describes.
