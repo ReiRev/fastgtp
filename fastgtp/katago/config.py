@@ -8,7 +8,7 @@ under ``/katago/<name>``::
     configs = ["analysis.cfg"]
     model = "model.bin.gz"
     max_visits = 10000
-    overrides = { numSearchThreads = 8 }
+    overrides = { numSearchThreadsPerAnalysisThread = 8 }
 
 ``overrides`` are passed to KataGo with ``-override-config``.
 ``examples/katago.toml`` describes every key.

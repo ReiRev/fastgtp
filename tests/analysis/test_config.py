@@ -58,7 +58,9 @@ def test_example_is_valid():
     example = Path(__file__).parents[2] / "examples" / "katago.toml"
     settings = load_settings(example)
     assert list(settings) == ["default"]
-    assert settings["default"].override_strings() == {"numSearchThreads": "8"}
+    assert settings["default"].override_strings() == {
+        "numSearchThreadsPerAnalysisThread": "8"
+    }
 
 
 def test_overrides_may_be_numbers_or_booleans(tmp_path):
