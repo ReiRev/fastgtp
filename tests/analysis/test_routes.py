@@ -143,6 +143,7 @@ def test_rejected_query_fails_with_the_error():
     [
         # KataGo could not be started or written to.
         (OSError("no such file"), "KATAGO_ERROR"),
+        # submit does not raise this today, but _run catches it in case.
         (KataGoError("KataGo is not running"), "KATAGO_ERROR"),
         # A query the routes should have refused, but did not.
         (ValueError("analyzeTurns cannot be empty"), "INVALID_QUERY"),

@@ -454,7 +454,8 @@ components:
               illegal move or an unknown rule. Sending it again fails again.
               fastgtp checks what it can when the query is created and
               answers `400` then; KataGo checks the rest, such as whether a
-              move is legal, when it reads the query.
+              move is legal, when it reads the query. fastgtp also uses it
+              for a query it refuses only when sending it to KataGo.
             - `KATAGO_ERROR`: KataGo could not be started, or stopped before
               the query finished. Sending it again may work.
             - `TIMED_OUT`: the query ran longer than the server allows.
