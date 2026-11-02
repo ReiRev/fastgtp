@@ -7,10 +7,11 @@ import time
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fastgtp.katago.engine import KataGoEngine
+from fastgtp.katago.engine import KataGoEngine, KataGoError
 from fastgtp.katago import queries as queries_module
 from fastgtp.katago.queries import KataGoQueries
 from fastgtp.katago.router import KataGoRouter
@@ -96,7 +97,8 @@ def test_query_succeeds():
         players = [r["rootInfo"]["currentPlayer"] for r in body["responses"]]
         assert players == ["B", "W", "B"]
         assert {r["id"] for r in body["responses"]} == {created["id"]}
-        assert "error" not in body and body["startedAt"] and body["finishedAt"]
+        assert "error" not in body and "failureReason" not in body
+        assert body["startedAt"] and body["finishedAt"]
         assert "retry-after" not in c.get(res.headers["location"]).headers
 
 
@@ -133,6 +135,31 @@ def test_rejected_query_fails_with_the_error():
             "error": "Could not parse board location: Z99",
             "field": "moves",
         }
+        assert body["failureReason"] == "INVALID_QUERY"
+
+
+@pytest.mark.parametrize(
+    ("exc", "reason"),
+    [
+        # KataGo could not be started or written to.
+        (OSError("no such file"), "KATAGO_ERROR"),
+        # submit does not raise this today, but _run catches it in case.
+        (KataGoError("KataGo is not running"), "KATAGO_ERROR"),
+        # A query the routes should have refused, but did not.
+        (ValueError("analyzeTurns cannot be empty"), "INVALID_QUERY"),
+    ],
+    # Ids without "katago", which CI deselects as tests needing real KataGo.
+    ids=["os-error", "engine-error", "value-error"],
+)
+def test_query_that_cannot_be_sent_says_why(monkeypatch, exc, reason):
+    async def submit(self, query):
+        raise exc
+
+    monkeypatch.setattr(KataGoEngine, "submit", submit)
+    with client() as c:
+        body = wait(c, c.post(f"{BASE}/queries", json=QUERY).headers["location"])
+        assert body["status"] == "FAILED"
+        assert body["failureReason"] == reason
 
 
 def test_full_queue_is_503():
@@ -155,6 +182,7 @@ def test_query_that_runs_too_long_is_terminated():
         body = wait(c, res.headers["location"])
         assert body["status"] == "FAILED"
         assert body["error"]["error"] == "The query ran longer than the server allows."
+        assert body["failureReason"] == "TIMED_OUT"
         # The turn being searched kept what it found.
         assert len(body["responses"]) == 1
 
@@ -199,3 +227,4 @@ def test_engine_stop_fails_the_query():
         body = wait(c, location)
         assert body["status"] == "FAILED"
         assert body["error"] == {"error": "KataGo stopped before the query finished."}
+        assert body["failureReason"] == "KATAGO_ERROR"

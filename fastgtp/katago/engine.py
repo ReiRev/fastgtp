@@ -43,6 +43,8 @@ class RunningQuery:
         self.responses: list[dict[str, Any]] = []
         self.warnings: list[dict[str, Any]] = []
         self.error: dict[str, Any] | None = None
+        # The spec's failureReason, set with error.
+        self.failure_reason: str | None = None
         self.done = asyncio.Event()
         self._turns_left = turns
 
@@ -51,6 +53,7 @@ class RunningQuery:
             # KataGo checks the whole query before it analyzes any turn, so
             # nothing follows an error.
             self.error = message
+            self.failure_reason = "INVALID_QUERY"
             self.done.set()
         elif "warning" in message:
             self.warnings.append(message)
@@ -67,6 +70,7 @@ class RunningQuery:
     def _fail(self, error: dict[str, Any]) -> None:
         if not self.done.is_set():
             self.error = error
+            self.failure_reason = "KATAGO_ERROR"
             self.done.set()
 
 
