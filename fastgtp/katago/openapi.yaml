@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: fastgtp KataGo extension
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Routes that only work with KataGo. They exist when the server is
     configured with KataGo, and fastgtp then adds them to its main API
@@ -92,7 +92,8 @@ paths:
         fastgtp checks the query against this schema and its own limits,
         and answers `400` when it fails. KataGo checks the game itself, such
         as locations, legal moves, rules names and turn numbers; a query
-        that KataGo rejects ends as `FAILED` with KataGo's error.
+        that KataGo rejects ends as `FAILED` with KataGo's error and the
+        `failureReason` `INVALID_QUERY`.
       requestBody:
         required: true
         content:
@@ -413,8 +414,9 @@ components:
           description: |
             `SUCCEEDED` when every turn finished its search. `FAILED` when
             KataGo rejected the query, KataGo stopped, or the query ran
-            longer than the server allows. In the last case fastgtp stops
-            the query with the `terminate` action.
+            longer than the server allows; `failureReason` says which. In
+            the last case fastgtp stops the query with the `terminate`
+            action.
           enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
         query:
           $ref: "#/components/schemas/KataGoQueryInput"
@@ -440,7 +442,26 @@ components:
             KataGo's error when KataGo rejected the query, for example
             `{"error": "Illegal move 1: E5", "field": "moves"}`. Otherwise
             fastgtp writes one in the same form: KataGo stopped, or the
-            query ran longer than the server allows.
+            query ran longer than the server allows. Its text is for people;
+            use `failureReason` to decide what to do.
+        failureReason:
+          type: string
+          description: |
+            Why the query failed, so a client can decide whether to send it
+            again. Set only when `status` is `FAILED`.
+
+            - `INVALID_QUERY`: KataGo refused the query, for example an
+              illegal move or an unknown rule. Sending it again fails again.
+              fastgtp checks what it can when the query is created and
+              answers `400` then; KataGo checks the rest, such as whether a
+              move is legal, when it reads the query.
+            - `KATAGO_ERROR`: KataGo could not be started, or stopped before
+              the query finished. Sending it again may work.
+            - `TIMED_OUT`: the query ran longer than the server allows.
+              Sending it again will likely time out again; ask for fewer
+              visits or fewer turns.
+          enum: [INVALID_QUERY, KATAGO_ERROR, TIMED_OUT]
+          example: INVALID_QUERY
         createdAt:
           type: string
           format: date-time

@@ -94,7 +94,7 @@ curl http://localhost:8000/katago/default/queries/a8544bb5eeda4e6997c1ca11a29826
 # {"id":"a8544bb5eeda4e6997c1ca11a298262f","status":"SUCCEEDED","query":{...},"responses":[{"turnNumber":2,"rootInfo":{"winrate":0.47,...},"moveInfos":[...],...}],...}
 ```
 
-Winrates, scores and ownership are from Black's point of view. KataGo checks the game itself, so a query with an illegal move ends as `FAILED` with KataGo's error, such as `{"error": "Illegal move 3: Q16", "field": "moves"}`.
+Winrates, scores and ownership are from Black's point of view. KataGo checks the game itself, so a query with an illegal move ends as `FAILED` with KataGo's error, such as `{"error": "Illegal move 3: Q16", "field": "moves"}`. `failureReason` says whether to send a failed query again: `INVALID_QUERY` will fail again, `KATAGO_ERROR` may work next time, and `TIMED_OUT` needs fewer visits or turns.
 
 ## Docker Compose
 

@@ -36,6 +36,7 @@ class Query:
         self.finished_at: str | None = None
         self.running: RunningQuery | None = None
         self.error: dict[str, Any] | None = None
+        self.failure_reason: str | None = None
         self.deleted = False
         self.task: asyncio.Task[None] | None = None
         self.removal: asyncio.TimerHandle | None = None
@@ -58,6 +59,7 @@ class Query:
         }
         if self.error is not None:
             body["error"] = _without_id(self.error)
+            body["failureReason"] = self.failure_reason
         if self.started_at is not None:
             body["startedAt"] = self.started_at
         if self.finished_at is not None:
@@ -134,11 +136,11 @@ class KataGoQueries:
                 item.running = await self.engine.submit(item.query)
             except ValueError as exc:
                 # The routes check queries first, so this is a missed case.
-                self._finish(item, {"error": str(exc)})
+                self._finish(item, {"error": str(exc)}, "INVALID_QUERY")
                 return
             except (KataGoError, OSError) as exc:
                 logger.warning("Could not send a query to KataGo: %s", exc)
-                self._finish(item, NOT_STARTED_ERROR)
+                self._finish(item, NOT_STARTED_ERROR, "KATAGO_ERROR")
                 return
             if item.deleted:
                 await self._terminate(item.running)
@@ -147,12 +149,18 @@ class KataGoQueries:
                 await asyncio.wait_for(item.running.done.wait(), self._timeout)
             except asyncio.TimeoutError:
                 await self._terminate(item.running)
-                self._finish(item, TIMED_OUT_ERROR)
+                self._finish(item, TIMED_OUT_ERROR, "TIMED_OUT")
                 return
-            self._finish(item, item.running.error)
+            self._finish(item, item.running.error, item.running.failure_reason)
 
-    def _finish(self, item: Query, error: dict[str, Any] | None) -> None:
+    def _finish(
+        self,
+        item: Query,
+        error: dict[str, Any] | None,
+        failure_reason: str | None = None,
+    ) -> None:
         item.error = error
+        item.failure_reason = failure_reason
         item.status = "FAILED" if error is not None else "SUCCEEDED"
         item.finished_at = _now()
         if not item.deleted:
